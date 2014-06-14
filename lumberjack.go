@@ -17,7 +17,7 @@
 //       MaxSize: lumberjack.Gigabyte,
 //       Backups: 3,
 //       MaxAge: lumberjack.Week * 4,
-//	))
+//   ))
 //
 // Note that lumberjack assumes whatever is writing to it will use locks to
 // prevent concurrent writes. Lumberjack does not implement its own lock.
