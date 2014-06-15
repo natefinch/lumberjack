@@ -1,5 +1,5 @@
 
-# lumberjack [![GoDoc](https://godoc.org/github.com/natefinch/lumberjack?status.png)](https://godoc.org/github.com/natefinch/lumberjack)
+# lumberjack  [![GoDoc](https://godoc.org/github.com/natefinch/lumberjack?status.png)](https://godoc.org/github.com/natefinch/lumberjack)
 
 [![Build Status](https://travis-ci.org/natefinch/lumberjack.png)](https://travis-ci.org/natefinch/lumberjack)
 
@@ -55,7 +55,7 @@ const (
 ``` go
 func IsWriteTooLong(err error) bool
 ```
-IsWriteTooLong returns whether the given error reports a write to Logger that
+IsWriteTooLong reports whether the given error indicates a Write with data that 
 exceeds the Logger's MaxSize.
 
 

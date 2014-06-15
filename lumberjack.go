@@ -358,8 +358,8 @@ func (b byFormatTime) time(i int) time.Time {
 	return t
 }
 
-// IsWriteTooLong returns whether the given error reports a write to Logger that
-// exceeds the Logger's MaxSize.
+// IsWriteTooLong reports whether the given error indicates a Write with data
+// that exceeds the Logger's MaxSize.
 func IsWriteTooLong(err error) bool {
 	if err == nil {
 		return false
