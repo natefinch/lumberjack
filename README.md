@@ -1,6 +1,8 @@
 
 # lumberjack
 
+[![Build Status](https://travis-ci.org/natefinch/lumberjack.png)](https://travis-ci.org/natefinch/lumberjack)
+
 Lumberjack is a Go package for writing logs to rolling files.
 
 Lumberjack is intended to be one part of a logging infrastructure.
