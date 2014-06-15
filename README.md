@@ -23,8 +23,9 @@ into the SetOutput function when your application starts:
 	    MaxAge: lumberjack.Week * 4,
 	))
 
-Note that lumberjack assumes whatever is writing to it will use locks to
-prevent concurrent writes. Lumberjack does not implement its own lock.
+Note that lumberjack assumes whatever is writing to it will use locks to prevent
+concurrent writes (the standard library log package already does this).
+Lumberjack does not implement its own lock.
 
 Lumberjack also assumes that only one process is writing to the output files.
 Using the same lumberjack configuration from multiple processes on the same
