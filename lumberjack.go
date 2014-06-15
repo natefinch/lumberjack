@@ -39,11 +39,13 @@ import (
 
 const (
 	// Some helper constants to make your declarations easier to read.
+
 	Megabyte = 1024 * 1024
 	Gigabyte = 1024 * Megabyte
 
-	// note that lumberjack days and weeks may not exactly conform to calendar
+	// Note that lumberjack days and weeks may not exactly conform to calendar
 	// days and weeks due to daylight savings, leap seconds, etc.
+
 	Day  = 24 * time.Hour
 	Week = 7 * Day
 
