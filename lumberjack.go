@@ -184,6 +184,9 @@ func (l *Logger) openNew() (*os.File, error) {
 // no such file or the write would put it over the MaxSize, a new file is
 // created.
 func (l *Logger) openExistingOrNew(writeLen int) (*os.File, error) {
+	if l.Dir == "" && l.NameFormat == "" {
+		return l.openNew()
+	}
 	files, err := ioutil.ReadDir(l.dir())
 	if os.IsNotExist(err) {
 		return l.openNew()

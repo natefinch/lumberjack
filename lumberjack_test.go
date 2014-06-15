@@ -120,13 +120,14 @@ func TestMakeLogDir(t *testing.T) {
 func TestDefaultLogDir(t *testing.T) {
 	currentTime = fakeTime
 	dir := os.TempDir()
-	defer os.RemoveAll(dir)
 	l := &Logger{
 		NameFormat: format,
 	}
 	defer l.Close()
 	b := []byte("boo!")
 	n, err := l.Write(b)
+	defer os.Remove(logFile(dir))
+
 	isNil(err, t)
 	equals(len(b), n, t)
 	existsWithLen(logFile(dir), n, t)
@@ -369,6 +370,39 @@ func TestLocalTime(t *testing.T) {
 
 	filename := logFileLocal(dir)
 	existsWithLen(filename, n, t)
+}
+
+func TestDefaultDirAndName(t *testing.T) {
+	currentTime = fakeTime
+
+	l := &Logger{MaxSize: Megabyte}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	filename := filepath.Join(os.TempDir(), fakeTime().UTC().Format(defaultNameFormat))
+	defer os.Remove(filename)
+
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	existsWithLen(filename, n, t)
+
+	err = l.Close()
+	isNil(err, t)
+
+	defer newFakeTime(Day)()
+
+	// even though the old file is under MaxSize, we should write a new file
+	// to prevent two processes using lumberjack from writing to the same file.
+	n, err = l.Write(b)
+
+	f2 := filepath.Join(os.TempDir(), fakeTime().UTC().Format(defaultNameFormat))
+	defer os.Remove(f2)
+
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	existsWithLen(f2, n, t)
 }
 
 // makeTempDir creates a file with a semi-unique name in the OS temp directory.
