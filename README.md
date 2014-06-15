@@ -1,5 +1,5 @@
 
-# lumberjack
+# lumberjack [![GoDoc](https://godoc.org/github.com/natefinch/lumberjack?status.png)](https://godoc.org/github.com/natefinch/lumberjack)
 
 [![Build Status](https://travis-ci.org/natefinch/lumberjack.png)](https://travis-ci.org/natefinch/lumberjack)
 
