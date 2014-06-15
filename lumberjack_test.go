@@ -1,6 +1,7 @@
 package lumberjack
 
 import (
+	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -34,7 +35,6 @@ func TestNewFile(t *testing.T) {
 	l := &Logger{
 		Dir:        dir,
 		NameFormat: format,
-		MaxSize:    Megabyte,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -59,7 +59,6 @@ func TestOpenExisting(t *testing.T) {
 	l := &Logger{
 		Dir:        dir,
 		NameFormat: format,
-		MaxSize:    Megabyte,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -91,6 +90,64 @@ func TestWriteTooLong(t *testing.T) {
 	equals(0, n, t)
 	_, err = os.Stat(logFile(dir))
 	assert(os.IsNotExist(err), t, "File exists, but should not have been created")
+
+	newerr := errors.New("foo")
+
+	assert(!IsWriteTooLong(nil), t,
+		"Nil error should not return true for IsWriteTooLong, but did.")
+	assert(!IsWriteTooLong(newerr), t,
+		"Different error should not return true for IsWriteTooLong, but did.")
+}
+
+func TestMakeLogDir(t *testing.T) {
+	currentTime = fakeTime
+	dir := time.Now().Format("TestMakeLogDir" + format)
+	dir = filepath.Join(os.TempDir(), dir)
+	defer os.RemoveAll(dir)
+	l := &Logger{
+		Dir:        dir,
+		NameFormat: format,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+	existsWithLen(logFile(dir), n, t)
+	fileCount(dir, 1, t)
+}
+
+func TestDefaultLogDir(t *testing.T) {
+	currentTime = fakeTime
+	dir := os.TempDir()
+	defer os.RemoveAll(dir)
+	l := &Logger{
+		NameFormat: format,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+	existsWithLen(logFile(dir), n, t)
+}
+
+func TestDefaultFilename(t *testing.T) {
+	currentTime = fakeTime
+	dir := makeTempDir("TestDefaultFilename", t)
+	defer os.RemoveAll(dir)
+	l := &Logger{
+		Dir: dir,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	name := filepath.Join(dir, fakeTime().UTC().Format(defaultNameFormat))
+	existsWithLen(name, n, t)
+	fileCount(dir, 1, t)
 }
 
 func TestRotate(t *testing.T) {
@@ -194,6 +251,54 @@ func TestMaxBackups(t *testing.T) {
 
 	// should have deleted the first filename
 	notExist(firstFilename, t)
+
+	// now test that we don't delete directories or non-logfile files
+
+	// set the current time one day later
+	defer newFakeTime(Day)()
+
+	// create a file that is close to but different from the logfile name.
+	/// It shouldn't get caught by our deletion filters.
+	notlogfile := logFile(dir) + ".foo"
+	err = ioutil.WriteFile(notlogfile, []byte("data"), 0644)
+	isNil(err, t)
+
+	// Make a directory that exactly matches our log file filters... it still
+	// shouldn't get caught by the deletion filter since it's a directory.
+	notlogfiledir := logFile(dir)
+	err = os.Mkdir(notlogfiledir, 0700)
+	isNil(err, t)
+
+	defer newFakeTime(Day)()
+
+	// this will make us rotate again
+	n, err = l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+
+	// this will use the new fake time
+	fourthFilename := logFile(dir)
+	existsWithLen(fourthFilename, n, t)
+
+	// we need to wait a little bit since the files get deleted on a different
+	// goroutine.
+	<-time.After(time.Millisecond * 10)
+
+	// We should have four things in the directory now - the 2 log files, the
+	// not log file, and the directory
+	fileCount(dir, 4, t)
+
+	// second file name should still exist
+	existsWithLen(thirdFilename, n, t)
+
+	// should have deleted the first filename
+	notExist(firstFilename, t)
+
+	// the not-a-logfile should still exist
+	exists(notlogfile, t)
+
+	// the directory
+	exists(notlogfiledir, t)
 }
 
 func TestMaxAge(t *testing.T) {
@@ -248,7 +353,7 @@ func TestMaxAge(t *testing.T) {
 func TestLocalTime(t *testing.T) {
 	currentTime = fakeTime
 
-	dir := makeTempDir("TestMaxAge", t)
+	dir := makeTempDir("TestLocalTime", t)
 	defer os.RemoveAll(dir)
 
 	l := &Logger{
@@ -315,4 +420,9 @@ func newFakeTime(later time.Duration) func() {
 func notExist(path string, t testing.TB) {
 	_, err := os.Stat(path)
 	assertUp(os.IsNotExist(err), t, 1, "expected to get os.IsNotExist, but instead got %v", err)
+}
+
+func exists(path string, t testing.TB) {
+	_, err := os.Stat(path)
+	assertUp(err == nil, t, 1, "expected file to exist, but got error from os.Stat: %v", err)
 }
