@@ -15,12 +15,16 @@
 //       Dir: "/var/log/myapp/"
 //       NameFormat: time.RFC822+".log",
 //       MaxSize: lumberjack.Gigabyte,
-//       Backups: 3,
+//       MaxBackups: 3,
 //       MaxAge: lumberjack.Week * 4,
 //   ))
 //
 // Note that lumberjack assumes whatever is writing to it will use locks to
 // prevent concurrent writes. Lumberjack does not implement its own lock.
+//
+// Lumberjack also assumes that only one process is writing to the output files.
+// Using the same lumberjack configuration from multiple processes on the same
+// machine will result in improper behavior.
 package lumberjack
 
 import (
@@ -52,13 +56,18 @@ var _ io.WriteCloser = &Logger{}
 
 // Logger is an io.WriteCloser that writes to a log file in the given directory
 // with the given NameFormat.  NameFormat should include a time formatting
-// layout in it that produces a valid filename for the OS.  For more about time
-// formatting layouts, read http://golang.org/pkg/time/#pkg-constants.
+// layout in it that produces a valid unique filename for the OS.  For more
+// about time formatting layouts, read http://golang.org/pkg/time/#pkg-
+// constants.
 //
-// Logger opens or creates the logfile on first Write.  If the most recently
-// modified file in the log file directory that matches the NameFormat is less
-// than MaxSize, that file will be appended to.  If no file such exists, a new
-// file is created using the current time to generate the filename.
+// The date encoded in the filename by NameFormat is used to determine which log
+// files are most recent in several situations.
+//
+// Logger opens or creates a logfile on first Write.  It looks for files in the
+// directory that match its name format, and if the one with the most recent
+// NameFormat date is less than MaxSize, it will open and append to that file.
+// If no such file exists, or the file is >= MaxSize, a new file is created
+// using the current time with NameFormat to generate the filename.
 //
 // Whenever a write would cause the current log file exceed MaxSize, a new file
 // is created using the current time.
@@ -66,29 +75,13 @@ var _ io.WriteCloser = &Logger{}
 // Cleaning Up Old Log Files
 //
 // Whenever a new file gets created, old log files may be deleted.  The log file
-// directory is scanned for files that match NameFormat.  The most recently
-// modified files which are newer than MaxAge (up to a number of files equal to
-// Backups) are retained, all other log files are deleted.
+// directory is scanned for files that match NameFormat.  The most recent files
+// according to their NameFormat date will be retained, up to a number equal to
+// MaxBackups (or all of them if MaxBackups is 0).  Any files with a last
+// modified time (based on FileInfo.ModTime) older than MaxAge are deleted,
+// regardless of MaxBackups.
 //
-// Defaults
-//
-// If Dir is empty, the files will be created in os.TempDir().
-//
-// If NameFormat is empty,  will be used as the
-// name format.
-//
-// If MaxSize is 0, 100 megabytes will be used as the max size.
-//
-// if MaxAge is 0, last modification time will not be used to delete old log
-// files.
-//
-// If Backups is 0, there's no limit to the number of old log files that will be
-// retained, as long as they're newer than MaxAge.
-//
-// If MaxAge and Backups are both 0, no old log files will be deteled.
-//
-// Thus, an default lumberjack.Logger struct will log to os.TempDir() with a 100
-// megabyte max size and never delete old log files.
+// If MaxBackups and MaxAge are both 0, no old log files will be deleted.
 type Logger struct {
 	// Dir determines the directory in which to store log files.
 	// It defaults to os.TempDir() if empty.
@@ -102,14 +95,15 @@ type Logger struct {
 	// rolled. It defaults to 100 megabytes.
 	MaxSize int64
 
-	// MaxAge is the maximum time to retain old log files.  The default is not
-	// to remove old log files based on age.
+	// MaxAge is the maximum time to retain old log files based on
+	// FileInfo.ModTime.  The default is not to remove old log files based on
+	// age.
 	MaxAge time.Duration
 
-	// Backups is the maximum number of old log files to retain.  The default is
-	// to retain all old log files (though MaxAge may still cause them to get
+	// MaxBackups is the maximum number of old log files to retain.  The default
+	// is to retain all old log files (though MaxAge may still cause them to get
 	// deleted.)
-	Backups int
+	MaxBackups int
 
 	// LocalTime determines if the time used for formatting the filename is the
 	// computer's local time.  The default is to use UTC time.
@@ -148,16 +142,17 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	n, err = f.Write(p)
 	l.size += int64(n)
 
+	if l.file != nil && rotate {
+		l.file.Close()
+	}
+	l.file = f
+
 	if rotate {
 		if err := l.cleanup(); err != nil {
 			return 0, err
 		}
 	}
 
-	if l.file != nil && rotate {
-		l.file.Close()
-	}
-	l.file = f
 	return n, err
 }
 
@@ -229,10 +224,10 @@ func (l *Logger) genFilename() string {
 	return filepath.Join(l.dir(), t.Format(l.format()))
 }
 
-// cleanup deletes old log files, keeping at most l.Backups files, as long as
+// cleanup deletes old log files, keeping at most l.MaxBackups files, as long as
 // none of them are older than MaxAge.
 func (l *Logger) cleanup() error {
-	if l.Backups == 0 && l.MaxAge == 0 {
+	if l.MaxBackups == 0 && l.MaxAge == 0 {
 		return nil
 	}
 
@@ -243,13 +238,13 @@ func (l *Logger) cleanup() error {
 
 	var deletes []os.FileInfo
 
-	if l.Backups > 0 {
-		deletes = files[l.Backups:]
-		files = files[:l.Backups]
+	if l.MaxBackups > 0 {
+		deletes = files[l.MaxBackups:]
+		files = files[:l.MaxBackups]
 	}
-
 	if l.MaxAge > 0 {
 		cutoff := currentTime().Add(-1 * l.MaxAge)
+
 		for _, f := range files {
 			if f.ModTime().Before(cutoff) {
 				deletes = append(deletes, f)

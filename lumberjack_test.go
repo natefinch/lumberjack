@@ -8,26 +8,27 @@ import (
 	"time"
 )
 
+// !!!NOTE!!!
+//
+// Running these tests in parallel will almost certainly cause sporadic (or even
+// regular) failures, because they're all messing with the same global variable
+// that controls the logic's mocked time.Now.  So... don't do that.
+
 // make sure we set the format to something safe for windows, too.
 const format = "2006-01-02T15-04-05.000"
 
-// this is the expected format for faketime goven the
-const timeString = "2009-11-10T13-22-33.444"
-
-var fakeCurrentTime = time.Date(2009, time.November, 10, 13, 22, 33, 444000000, time.UTC)
+// Since all the tests uses the time to determine filenames etc, we need to
+// control the wall clock as much as possible, which means having a wall clock
+// that doesn't change unless we want it to.
+var fakeCurrentTime = time.Now()
 
 func fakeTime() time.Time {
 	return fakeCurrentTime
 }
 
-func TestFakeTime(t *testing.T) {
-	// test the tests
-	s := fakeTime().Format(format)
-	equals(timeString, s, t)
-}
-
 func TestNewFile(t *testing.T) {
 	currentTime = fakeTime
+
 	dir := makeTempDir("TestNewFile", t)
 	defer os.RemoveAll(dir)
 	l := &Logger{
@@ -113,7 +114,7 @@ func TestRotate(t *testing.T) {
 	fileCount(dir, 1, t)
 
 	// set the current time one day later
-	defer newFakeTime()()
+	defer newFakeTime(Day)()
 
 	b2 := []byte("foooooo!")
 	n, err = l.Write(b2)
@@ -130,16 +131,16 @@ func TestRotate(t *testing.T) {
 	fileCount(dir, 2, t)
 }
 
-func TestBackups(t *testing.T) {
+func TestMaxBackups(t *testing.T) {
 	currentTime = fakeTime
-	dir := makeTempDir("TestBackups", t)
+	dir := makeTempDir("TestMaxBackups", t)
 	defer os.RemoveAll(dir)
 
 	l := &Logger{
 		Dir:        dir,
 		NameFormat: format,
 		MaxSize:    10,
-		Backups:    1,
+		MaxBackups: 1,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -152,7 +153,7 @@ func TestBackups(t *testing.T) {
 	fileCount(dir, 1, t)
 
 	// set the current time one day later
-	defer newFakeTime()()
+	defer newFakeTime(Day)()
 
 	// this will put us over the max
 	b2 := []byte("foooooo!")
@@ -170,7 +171,7 @@ func TestBackups(t *testing.T) {
 	fileCount(dir, 2, t)
 
 	// set the current time one day later
-	defer newFakeTime()()
+	defer newFakeTime(Day)()
 
 	// this will make us rotate again
 	n, err = l.Write(b2)
@@ -195,6 +196,76 @@ func TestBackups(t *testing.T) {
 	notExist(firstFilename, t)
 }
 
+func TestMaxAge(t *testing.T) {
+	currentTime = fakeTime
+	// This test uses ModTime on files, and so we need to make sure we're using
+	// the most current time possible.
+	fakeCurrentTime = time.Now()
+	dir := makeTempDir("TestMaxAge", t)
+	defer os.RemoveAll(dir)
+
+	l := &Logger{
+		Dir:        dir,
+		NameFormat: format,
+		MaxSize:    10,
+		MaxAge:     10 * time.Millisecond,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	filename := logFile(dir)
+	existsWithLen(filename, n, t)
+	fileCount(dir, 1, t)
+
+	// We need to wait for wall clock time since MaxAge uses file ModTime, which
+	// can't be mocked.
+	<-time.After(50 * time.Millisecond)
+	fakeCurrentTime = time.Now()
+
+	b2 := []byte("foooooo!")
+	n, err = l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+
+	// we need to wait a little bit since the files get deleted on a different
+	// goroutine.
+	<-time.After(10 * time.Millisecond)
+
+	// We should have just one log file
+	fileCount(dir, 1, t)
+
+	// this will use the new fake time
+	newFilename := logFile(dir)
+	existsWithLen(newFilename, n, t)
+
+	// we should have deleted the old file due to being too old
+	notExist(filename, t)
+}
+
+func TestLocalTime(t *testing.T) {
+	currentTime = fakeTime
+
+	dir := makeTempDir("TestMaxAge", t)
+	defer os.RemoveAll(dir)
+
+	l := &Logger{
+		Dir:        dir,
+		NameFormat: format,
+		LocalTime:  true,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	filename := logFileLocal(dir)
+	existsWithLen(filename, n, t)
+}
+
 // makeTempDir creates a file with a semi-unique name in the OS temp directory.
 // It should be based on the name of the test, to keep parallel tests from
 // colliding, and must be cleaned up after the test is finished.
@@ -215,6 +286,12 @@ func existsWithLen(path string, length int, t testing.TB) {
 // logFile returns the log file name in the given directory for the current fake
 // time.
 func logFile(dir string) string {
+	return filepath.Join(dir, fakeTime().UTC().Format(format))
+}
+
+// logFileLocal returns the log file name in the given directory for the current
+// fake time using the local timezone.
+func logFileLocal(dir string) string {
 	return filepath.Join(dir, fakeTime().Format(format))
 }
 
@@ -227,9 +304,9 @@ func fileCount(dir string, exp int, t testing.TB) {
 }
 
 // newFakeTime sets the fake "current time" to one day later.
-func newFakeTime() func() {
+func newFakeTime(later time.Duration) func() {
 	old := fakeCurrentTime
-	fakeCurrentTime = fakeCurrentTime.Add(Day)
+	fakeCurrentTime = fakeCurrentTime.Add(later)
 	return func() {
 		fakeCurrentTime = old
 	}
@@ -237,5 +314,5 @@ func newFakeTime() func() {
 
 func notExist(path string, t testing.TB) {
 	_, err := os.Stat(path)
-	assertUp(os.IsNotExist(err), t, 1, "expected to get os.IsNotExist, but instead got %s", err)
+	assertUp(os.IsNotExist(err), t, 1, "expected to get os.IsNotExist, but instead got %v", err)
 }
