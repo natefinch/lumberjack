@@ -73,8 +73,6 @@ type Logger struct {
     // LocalTime determines if the time used for formatting the filename is the
     // computer's local time.  The default is to use UTC time.
     LocalTime bool `json:"localtime" yaml:"localtime"`
-
-    sync.Mutex
     // contains filtered or unexported fields
 }
 ```
