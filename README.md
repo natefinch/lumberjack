@@ -79,7 +79,7 @@ type Logger struct {
 Logger is an io.WriteCloser that writes to a log file in the given directory
 with the given NameFormat.  NameFormat should include a time formatting
 layout in it that produces a valid unique filename for the OS.  For more
-about time formatting layouts, read a href="http://golang.org/pkg/time/#pkg-constants">http://golang.org/pkg/time/#pkg-constants</a>.
+about time formatting layouts, read a http://golang.org/pkg/time/#pkg-constants.
 
 The date encoded in the filename by NameFormat is used to determine which log
 files are most recent in several situations.
