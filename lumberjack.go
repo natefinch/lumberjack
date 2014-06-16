@@ -110,7 +110,7 @@ type Logger struct {
 
 	size int64
 	file *os.File
-	mu   sync.Mutex
+	sync.Mutex
 }
 
 // currentTime is only used for testing. Normally it's the time.Now() function.
@@ -121,8 +121,8 @@ var currentTime = time.Now
 // PathFormat.  If the length of the write is greater than MaxSize, an error is
 // returned that satisfies IsWriteTooLong.
 func (l *Logger) Write(p []byte) (n int, err error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.Lock()
+	defer l.Unlock()
 	writeLen := int64(len(p))
 	if writeLen > l.max() {
 		return 0, fmt.Errorf(
@@ -160,8 +160,8 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 
 // Close implements io.Closer, and closes the current logfile.
 func (l *Logger) Close() error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.Lock()
+	defer l.Unlock()
 	if l.file != nil {
 		err := l.file.Close()
 		l.file = nil
@@ -176,8 +176,8 @@ func (l *Logger) Close() error {
 // SIGHUP.  After rotating, this initiates a cleanup of old log files according
 // to the normal rules.
 func (l *Logger) Rotate() error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.Lock()
+	defer l.Unlock()
 	if l.file != nil {
 		if err := l.file.Close(); err != nil {
 			return err
