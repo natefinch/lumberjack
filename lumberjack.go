@@ -119,7 +119,7 @@ var currentTime = time.Now
 // Write implements io.Writer.  If a write would cause the log file to be larger
 // than MaxSize, a new log file is created using the current time formatted with
 // PathFormat.  If the length of the write is greater than MaxSize, an error is
-// returned that satisfies IsWriteTooLong.
+// returned.
 func (l *Logger) Write(p []byte) (n int, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
