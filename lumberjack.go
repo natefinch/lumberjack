@@ -141,9 +141,8 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 // Close implements io.Closer, and closes the current logfile.
 func (l *Logger) Close() error {
 	l.mu.Lock()
-	err := l.close()
-	l.mu.Unlock()
-	return err
+	defer l.mu.Unlock()
+	return l.close()
 }
 
 // close closes the file if it is open.
@@ -163,9 +162,8 @@ func (l *Logger) close() error {
 // to the normal rules.
 func (l *Logger) Rotate() error {
 	l.mu.Lock()
-	err := l.rotate()
-	l.mu.Unlock()
-	return err
+	defer l.mu.Unlock()
+	return l.rotate()
 }
 
 // rotate closes the current file, if any, opens a new file, and then calls
