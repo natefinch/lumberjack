@@ -132,6 +132,25 @@ SIGHUP.  After rotating, this initiates a cleanup of old log files according
 to the normal rules.
 
 
+#### Example
+
+Example of how to rotate in response to SIGHUP.
+
+Code:
+
+  l := &lumberjack.Logger{}
+  log.SetOutput(l)
+  c := make(chan os.Signal, 1)
+  signal.Notify(c, syscall.SIGHUP)
+
+  go func() {
+      for {
+          <-c
+          l.Rotate()
+      }
+  }()
+
+
 
 ### func (\*Logger) Write
 ``` go
