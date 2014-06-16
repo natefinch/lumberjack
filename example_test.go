@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/natefinch/lumberjack"
 )
@@ -24,4 +25,16 @@ func ExampleLogger_Rotate() {
 			l.Rotate()
 		}
 	}()
+}
+
+// To use lumberjack with the standard library's log package, just pass it into
+// the SetOutput function when your application starts.
+func Example() {
+	log.SetOutput(&lumberjack.Logger{
+		Dir:        "/var/log/myapp/",
+		NameFormat: time.RFC822 + ".log",
+		MaxSize:    lumberjack.Gigabyte,
+		MaxBackups: 3,
+		MaxAge:     lumberjack.Week * 4,
+	})
 }

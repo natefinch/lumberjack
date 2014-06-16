@@ -8,17 +8,6 @@
 // Lumberjack plays well with any logger that can write to an io.Writer,
 // including the standard library's log package.
 //
-// For example, to use lumberjack with the std lib's log package, just pass it
-// into the SetOutput function when your application starts:
-//
-//   log.SetOutput(&lumberjack.Logger{
-//       Dir: "/var/log/myapp/"
-//       NameFormat: time.RFC822+".log",
-//       MaxSize: lumberjack.Gigabyte,
-//       MaxBackups: 3,
-//       MaxAge: lumberjack.Week * 4,
-//   ))
-//
 // Lumberjack assumes that only one process is writing to the output files.
 // Using the same lumberjack configuration from multiple processes on the same
 // machine will result in improper behavior.
@@ -123,37 +112,26 @@ var currentTime = time.Now
 func (l *Logger) Write(p []byte) (n int, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
 	writeLen := int64(len(p))
 	if writeLen > l.max() {
 		return 0, fmt.Errorf(
 			"write length %d exceeds maximum file size %d", writeLen, l.max(),
 		)
 	}
-	f := l.file
-	rotate := l.size+writeLen > l.max()
-	if f == nil {
-		if f, err = l.openExistingOrNew(len(p)); err != nil {
+	if l.size+writeLen > l.max() {
+		if err := l.rotate(); err != nil {
 			return 0, err
 		}
-	} else if rotate {
-		if f, err = l.openNew(); err != nil {
+	}
+	if l.file == nil {
+		if err = l.openExistingOrNew(len(p)); err != nil {
 			return 0, err
 		}
 	}
 
-	n, err = f.Write(p)
+	n, err = l.file.Write(p)
 	l.size += int64(n)
-
-	if l.file != nil && rotate {
-		l.file.Close()
-	}
-	l.file = f
-
-	if rotate {
-		if err := l.cleanup(); err != nil {
-			return 0, err
-		}
-	}
 
 	return n, err
 }
@@ -161,13 +139,19 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 // Close implements io.Closer, and closes the current logfile.
 func (l *Logger) Close() error {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.file != nil {
-		err := l.file.Close()
-		l.file = nil
-		return err
+	err := l.close()
+	l.mu.Unlock()
+	return err
+}
+
+// close closes the file if it is open.
+func (l *Logger) close() error {
+	if l.file == nil {
+		return nil
 	}
-	return nil
+	err := l.file.Close()
+	l.file = nil
+	return err
 }
 
 // Rotate causes Logger to close the existing log file and immediately create a
@@ -177,47 +161,49 @@ func (l *Logger) Close() error {
 // to the normal rules.
 func (l *Logger) Rotate() error {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.file != nil {
-		if err := l.file.Close(); err != nil {
-			return err
-		}
-		l.file = nil
+	err := l.rotate()
+	l.mu.Unlock()
+	return err
+}
+
+// rotate closes the current file, if any, opens a new file, and then calls
+// cleanup.
+func (l *Logger) rotate() error {
+	if err := l.close(); err != nil {
+		return nil
 	}
-	var err error
-	l.file, err = l.openNew()
-	if err != nil {
+	if err := l.openNew(); err != nil {
 		return err
 	}
 	return l.cleanup()
 }
 
 // openNew opens a new log file for writing.
-func (l *Logger) openNew() (*os.File, error) {
+func (l *Logger) openNew() error {
 	err := os.MkdirAll(l.dir(), 0744)
 	if err != nil {
-		return nil, fmt.Errorf("can't make directories for new logfile: %s", err)
+		return fmt.Errorf("can't make directories for new logfile: %s", err)
 	}
-	filename := l.genFilename()
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(l.genFilename(), os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("can't open new logfile: %s", err)
+		return fmt.Errorf("can't open new logfile: %s", err)
 	}
 	info, err := f.Stat()
 	if err != nil {
 		// can't really do anything if close fails here
 		_ = f.Close()
-		return nil, fmt.Errorf("can't get size of new logfile: %s", err)
+		return fmt.Errorf("can't get size of new logfile: %s", err)
 	}
 	l.size = info.Size()
-	return f, nil
+	l.file = f
+	return nil
 }
 
 // openExistingOrNew opens the most recently modified logfile in the log
 // directory, if the current write would not put it over MaxSize.  If there is
 // no such file or the write would put it over the MaxSize, a new file is
 // created.
-func (l *Logger) openExistingOrNew(writeLen int) (*os.File, error) {
+func (l *Logger) openExistingOrNew(writeLen int) error {
 	if l.Dir == "" && l.NameFormat == "" {
 		return l.openNew()
 	}
@@ -226,25 +212,26 @@ func (l *Logger) openExistingOrNew(writeLen int) (*os.File, error) {
 		return l.openNew()
 	}
 	if err != nil {
-		return nil, fmt.Errorf("can't read files in log file directory: %s", err)
+		return fmt.Errorf("can't read files in log file directory: %s", err)
 	}
 	sort.Sort(byFormatTime{files, l.format()})
-	for _, f := range files {
-		if f.IsDir() {
+	for _, info := range files {
+		if info.IsDir() {
 			continue
 		}
 
-		if !l.isLogFile(f) {
+		if !l.isLogFile(info) {
 			continue
 		}
 
 		// the first file we find that matches our pattern will be the most
 		// recently modified log file.
-		if f.Size()+int64(writeLen) < l.max() {
-			filename := filepath.Join(l.dir(), f.Name())
+		if info.Size()+int64(writeLen) < l.max() {
+			filename := filepath.Join(l.dir(), info.Name())
 			file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
 			if err == nil {
-				return file, nil
+				l.file = file
+				return nil
 			}
 			// if we fail to open the old log file for some reason, just ignore
 			// it and open a new log file.

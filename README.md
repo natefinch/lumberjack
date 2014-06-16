@@ -11,22 +11,26 @@ to which logs are written.
 Lumberjack plays well with any logger that can write to an io.Writer,
 including the standard library's log package.
 
-For example, to use lumberjack with the std lib's log package, just pass it
-into the SetOutput function when your application starts:
-
-
-	log.SetOutput(&lumberjack.Logger{
-	    Dir: "/var/log/myapp/"
-	    NameFormat: time.RFC822+".log",
-	    MaxSize: lumberjack.Gigabyte,
-	    MaxBackups: 3,
-	    MaxAge: lumberjack.Week * 4,
-	))
-
 Lumberjack assumes that only one process is writing to the output files.
 Using the same lumberjack configuration from multiple processes on the same
 machine will result in improper behavior.
 
+#### Example
+
+To use lumberjack with the standard library's log package, just pass it into the
+SetOutput function when your application starts.
+
+Code:
+
+```go
+log.SetOutput(&lumberjack.Logger{
+    Dir:        "/var/log/myapp/",
+    NameFormat: time.RFC822 + ".log",
+    MaxSize:    lumberjack.Gigabyte,
+    MaxBackups: 3,
+    MaxAge:     lumberjack.Week * 4,
+})
+```
 
 
 
