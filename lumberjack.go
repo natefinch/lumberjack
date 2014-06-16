@@ -19,10 +19,7 @@
 //       MaxAge: lumberjack.Week * 4,
 //   ))
 //
-// Note that lumberjack assumes whatever is writing to it will use locks to
-// prevent concurrent writes. Lumberjack does not implement its own lock.
-//
-// Lumberjack also assumes that only one process is writing to the output files.
+// Lumberjack assumes that only one process is writing to the output files.
 // Using the same lumberjack configuration from multiple processes on the same
 // machine will result in improper behavior.
 package lumberjack
@@ -34,6 +31,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -59,8 +57,7 @@ var _ io.WriteCloser = &Logger{}
 // Logger is an io.WriteCloser that writes to a log file in the given directory
 // with the given NameFormat.  NameFormat should include a time formatting
 // layout in it that produces a valid unique filename for the OS.  For more
-// about time formatting layouts, read http://golang.org/pkg/time/#pkg-
-// constants.
+// about time formatting layouts, read http://golang.org/pkg/time/#pkg-constants.
 //
 // The date encoded in the filename by NameFormat is used to determine which log
 // files are most recent in several situations.
@@ -87,32 +84,33 @@ var _ io.WriteCloser = &Logger{}
 type Logger struct {
 	// Dir determines the directory in which to store log files.
 	// It defaults to os.TempDir() if empty.
-	Dir string
+	Dir string `json:"dir" yaml:"dir"`
 
 	// NameFormat is the time formatting layout used to generate filenames.
 	// It defaults to "2006-01-02T15-04-05.000.log".
-	NameFormat string
+	NameFormat string `json:"nameformat" yaml:"nameformat"`
 
 	// MaxSize is the maximum size in bytes of the log file before it gets
 	// rolled. It defaults to 100 megabytes.
-	MaxSize int64
+	MaxSize int64 `json:"maxsize" yaml:"maxsize"`
 
 	// MaxAge is the maximum time to retain old log files based on
 	// FileInfo.ModTime.  The default is not to remove old log files based on
 	// age.
-	MaxAge time.Duration
+	MaxAge time.Duration `json:"maxage" yaml:"maxage"`
 
 	// MaxBackups is the maximum number of old log files to retain.  The default
 	// is to retain all old log files (though MaxAge may still cause them to get
 	// deleted.)
-	MaxBackups int
+	MaxBackups int `json:"maxbackups" yaml:"maxbackups"`
 
 	// LocalTime determines if the time used for formatting the filename is the
 	// computer's local time.  The default is to use UTC time.
-	LocalTime bool
+	LocalTime bool `json:"localtime" yaml:"localtime"`
 
 	size int64
 	file *os.File
+	sync.Mutex
 }
 
 // currentTime is only used for testing. Normally it's the time.Now() function.
@@ -123,11 +121,13 @@ var currentTime = time.Now
 // PathFormat.  If the length of the write is greater than MaxSize, an error is
 // returned that satisfies IsWriteTooLong.
 func (l *Logger) Write(p []byte) (n int, err error) {
+	l.Lock()
+	defer l.Unlock()
 	writeLen := int64(len(p))
 	if writeLen > l.max() {
-		return 0, writeTooLongError{fmt.Errorf(
+		return 0, fmt.Errorf(
 			"write length %d exceeds maximum file size %d", writeLen, l.max(),
-		)}
+		)
 	}
 	f := l.file
 	rotate := l.size+writeLen > l.max()
@@ -156,6 +156,40 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	}
 
 	return n, err
+}
+
+// Close implements io.Closer, and closes the current logfile.
+func (l *Logger) Close() error {
+	l.Lock()
+	defer l.Unlock()
+	if l.file != nil {
+		err := l.file.Close()
+		l.file = nil
+		return err
+	}
+	return nil
+}
+
+// Rotate causes Logger to close the existing log file and immediately create a
+// new one.  This is a helper function for applications that want to initiate
+// rotations outside of the normal rotation rules, such as in response to
+// SIGHUP.  After rotating, this initiates a cleanup of old log files according
+// to the normal rules.
+func (l *Logger) Rotate() error {
+	l.Lock()
+	defer l.Unlock()
+	if l.file != nil {
+		if err := l.file.Close(); err != nil {
+			return err
+		}
+		l.file = nil
+	}
+	var err error
+	l.file, err = l.openNew()
+	if err != nil {
+		return err
+	}
+	return l.cleanup()
 }
 
 // openNew opens a new log file for writing.
@@ -306,16 +340,6 @@ func (l *Logger) isLogFile(f os.FileInfo) bool {
 	return err == nil
 }
 
-// Close implements io.Closer, and closes the current logfile.
-func (l *Logger) Close() error {
-	if l.file != nil {
-		err := l.file.Close()
-		l.file = nil
-		return err
-	}
-	return nil
-}
-
 func (l *Logger) max() int64 {
 	if l.MaxSize == 0 {
 		return defaultMaxSize
@@ -361,18 +385,4 @@ func (b byFormatTime) time(i int) time.Time {
 		return time.Time{}
 	}
 	return t
-}
-
-// IsWriteTooLong reports whether the given error indicates a Write with data
-// that exceeds the Logger's MaxSize.
-func IsWriteTooLong(err error) bool {
-	if err == nil {
-		return false
-	}
-	_, ok := err.(writeTooLongError)
-	return ok
-}
-
-type writeTooLongError struct {
-	error
 }

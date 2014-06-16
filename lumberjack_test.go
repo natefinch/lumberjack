@@ -1,7 +1,7 @@
 package lumberjack
 
 import (
-	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -85,18 +85,12 @@ func TestWriteTooLong(t *testing.T) {
 	defer l.Close()
 	b := []byte("booooooooooooooo!")
 	n, err := l.Write(b)
-	assert(IsWriteTooLong(err), t,
-		"Should have gotten write too long error, instead got %s (%T)", err, err)
+	notNil(err, t)
 	equals(0, n, t)
+	equals(err.Error(),
+		fmt.Sprintf("write length %d exceeds maximum file size %d", len(b), l.MaxSize), t)
 	_, err = os.Stat(logFile(dir))
 	assert(os.IsNotExist(err), t, "File exists, but should not have been created")
-
-	newerr := errors.New("foo")
-
-	assert(!IsWriteTooLong(nil), t,
-		"Nil error should not return true for IsWriteTooLong, but did.")
-	assert(!IsWriteTooLong(newerr), t,
-		"Different error should not return true for IsWriteTooLong, but did.")
 }
 
 func TestMakeLogDir(t *testing.T) {
@@ -151,9 +145,9 @@ func TestDefaultFilename(t *testing.T) {
 	fileCount(dir, 1, t)
 }
 
-func TestRotate(t *testing.T) {
+func TestAutoRotate(t *testing.T) {
 	currentTime = fakeTime
-	dir := makeTempDir("TestRotate", t)
+	dir := makeTempDir("TestAutoRotate", t)
 	defer os.RemoveAll(dir)
 
 	l := &Logger{
@@ -403,6 +397,66 @@ func TestDefaultDirAndName(t *testing.T) {
 	equals(len(b), n, t)
 
 	existsWithLen(f2, n, t)
+}
+
+func TestRotate(t *testing.T) {
+	currentTime = fakeTime
+	dir := makeTempDir("TestRotate", t)
+	defer os.RemoveAll(dir)
+
+	l := &Logger{
+		Dir:        dir,
+		NameFormat: format,
+		MaxBackups: 1,
+		MaxSize:    Megabyte,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	filename := logFile(dir)
+	existsWithLen(filename, n, t)
+	fileCount(dir, 1, t)
+
+	// set the current time one day later
+	defer newFakeTime(Day)()
+
+	err = l.Rotate()
+	isNil(err, t)
+
+	// we need to wait a little bit since the files get deleted on a different
+	// goroutine.
+	<-time.After(10 * time.Millisecond)
+
+	filename2 := logFile(dir)
+	existsWithLen(filename2, 0, t)
+	existsWithLen(filename, n, t)
+	fileCount(dir, 2, t)
+
+	// set the current time one day later
+	defer newFakeTime(Day)()
+
+	err = l.Rotate()
+	isNil(err, t)
+
+	// we need to wait a little bit since the files get deleted on a different
+	// goroutine.
+	<-time.After(10 * time.Millisecond)
+
+	filename3 := logFile(dir)
+	existsWithLen(filename3, 0, t)
+	existsWithLen(filename2, 0, t)
+	fileCount(dir, 2, t)
+
+	b2 := []byte("foooooo!")
+	n, err = l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+
+	// this will use the new fake time
+	existsWithLen(filename3, n, t)
 }
 
 // makeTempDir creates a file with a semi-unique name in the OS temp directory.

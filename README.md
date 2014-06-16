@@ -3,7 +3,7 @@
 
 [![Build Status](https://travis-ci.org/natefinch/lumberjack.png)](https://travis-ci.org/natefinch/lumberjack)
 
-Lumberjack is a Go package for writing logs to rolling files.
+### Lumberjack is a Go package for writing logs to rolling files.
 
 Lumberjack is intended to be one part of a logging infrastructure.
 It is not an all-in-one solution, but instead is a pluggable
@@ -25,11 +25,7 @@ into the SetOutput function when your application starts:
 	    MaxAge: lumberjack.Week * 4,
 	))
 
-Note that lumberjack assumes whatever is writing to it will use locks to prevent
-concurrent writes (the standard library log package already does this).
-Lumberjack does not implement its own lock.
-
-Lumberjack also assumes that only one process is writing to the output files.
+Lumberjack assumes that only one process is writing to the output files.
 Using the same lumberjack configuration from multiple processes on the same
 machine will result in improper behavior.
 
@@ -39,24 +35,13 @@ machine will result in improper behavior.
 ## Constants
 ``` go
 const (
-    // Some helper constants to make your declarations easier to read.
     Megabyte = 1024 * 1024
     Gigabyte = 1024 * Megabyte
 
-    // note that lumberjack days and weeks may not exactly conform to calendar
-    // days and weeks due to daylight savings, leap seconds, etc.
     Day  = 24 * time.Hour
     Week = 7 * Day
 )
 ```
-
-
-## func IsWriteTooLong
-``` go
-func IsWriteTooLong(err error) bool
-```
-IsWriteTooLong reports whether the given error indicates a Write with data that 
-exceeds the Logger's MaxSize.
 
 
 
@@ -65,37 +50,38 @@ exceeds the Logger's MaxSize.
 type Logger struct {
     // Dir determines the directory in which to store log files.
     // It defaults to os.TempDir() if empty.
-    Dir string
+    Dir string `json:"dir" yaml:"dir"`
 
     // NameFormat is the time formatting layout used to generate filenames.
     // It defaults to "2006-01-02T15-04-05.000.log".
-    NameFormat string
+    NameFormat string `json:"nameformat" yaml:"nameformat"`
 
     // MaxSize is the maximum size in bytes of the log file before it gets
     // rolled. It defaults to 100 megabytes.
-    MaxSize int64
+    MaxSize int64 `json:"maxsize" yaml:"maxsize"`
 
     // MaxAge is the maximum time to retain old log files based on
     // FileInfo.ModTime.  The default is not to remove old log files based on
     // age.
-    MaxAge time.Duration
+    MaxAge time.Duration `json:"maxage" yaml:"maxage"`
 
     // MaxBackups is the maximum number of old log files to retain.  The default
     // is to retain all old log files (though MaxAge may still cause them to get
     // deleted.)
-    MaxBackups int
+    MaxBackups int `json:"maxbackups" yaml:"maxbackups"`
 
     // LocalTime determines if the time used for formatting the filename is the
     // computer's local time.  The default is to use UTC time.
-    LocalTime bool
+    LocalTime bool `json:"localtime" yaml:"localtime"`
+
+    sync.Mutex
     // contains filtered or unexported fields
 }
 ```
 Logger is an io.WriteCloser that writes to a log file in the given directory
 with the given NameFormat.  NameFormat should include a time formatting
 layout in it that produces a valid unique filename for the OS.  For more
-about time formatting layouts, read a href="http://golang.org/pkg/time/#pkg-">http://golang.org/pkg/time/#pkg-</a>
-constants.
+about time formatting layouts, read a href="http://golang.org/pkg/time/#pkg-constants">http://golang.org/pkg/time/#pkg-constants</a>.
 
 The date encoded in the filename by NameFormat is used to determine which log
 files are most recent in several situations.
@@ -134,6 +120,18 @@ If MaxBackups and MaxAge are both 0, no old log files will be deleted.
 func (l *Logger) Close() error
 ```
 Close implements io.Closer, and closes the current logfile.
+
+
+
+### func (\*Logger) Rotate
+``` go
+func (l *Logger) Rotate() error
+```
+Rotate causes Logger to close the existing log file and immediately create a
+new one.  This is a helper function for applications that want to initiate
+rotations outside of the normal rotation rules, such as in response to
+SIGHUP.  After rotating, this initiates a cleanup of old log files according
+to the normal rules.
 
 
 
