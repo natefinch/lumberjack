@@ -52,7 +52,7 @@ const (
 )
 
 // ensure we always implement io.WriteCloser
-var _ io.WriteCloser = &Logger{}
+var _ io.WriteCloser = (*Logger)(nil)
 
 // Logger is an io.WriteCloser that writes to a log file in the given directory
 // with the given NameFormat.  NameFormat should include a time formatting
