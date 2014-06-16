@@ -119,13 +119,15 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 			"write length %d exceeds maximum file size %d", writeLen, l.max(),
 		)
 	}
-	if l.size+writeLen > l.max() {
-		if err := l.rotate(); err != nil {
+
+	if l.file == nil {
+		if err = l.openExistingOrNew(len(p)); err != nil {
 			return 0, err
 		}
 	}
-	if l.file == nil {
-		if err = l.openExistingOrNew(len(p)); err != nil {
+
+	if l.size+writeLen > l.max() {
+		if err := l.rotate(); err != nil {
 			return 0, err
 		}
 	}

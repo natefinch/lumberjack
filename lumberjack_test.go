@@ -183,6 +183,37 @@ func TestAutoRotate(t *testing.T) {
 	fileCount(dir, 2, t)
 }
 
+func TestFirstWriteRotate(t *testing.T) {
+	currentTime = fakeTime
+	dir := makeTempDir("TestFirstWriteRotate", t)
+	defer os.RemoveAll(dir)
+
+	l := &Logger{
+		Dir:        dir,
+		NameFormat: format,
+		MaxSize:    10,
+	}
+	defer l.Close()
+
+	filename := logFile(dir)
+	err := ioutil.WriteFile(filename, []byte("boooooo!"), 0600)
+	isNil(err, t)
+
+	// set the current time one day later
+	defer newFakeTime(Day)()
+
+	// this would make us rotate
+	b := []byte("fooo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	filename2 := logFile(dir)
+	existsWithLen(filename2, n, t)
+
+	fileCount(dir, 2, t)
+}
+
 func TestMaxBackups(t *testing.T) {
 	currentTime = fakeTime
 	dir := makeTempDir("TestMaxBackups", t)
