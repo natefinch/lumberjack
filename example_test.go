@@ -35,6 +35,6 @@ func Example() {
 		NameFormat: time.RFC822 + ".log",
 		MaxSize:    lumberjack.Gigabyte,
 		MaxBackups: 3,
-		MaxAge:     lumberjack.Week * 4,
+		MaxAge:     28,
 	})
 }

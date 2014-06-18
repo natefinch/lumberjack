@@ -1,6 +1,7 @@
 package lumberjack
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -166,7 +167,7 @@ func TestAutoRotate(t *testing.T) {
 	fileCount(dir, 1, t)
 
 	// set the current time one day later
-	defer newFakeTime(Day)()
+	newFakeTime()
 
 	b2 := []byte("foooooo!")
 	n, err = l.Write(b2)
@@ -200,7 +201,7 @@ func TestFirstWriteRotate(t *testing.T) {
 	isNil(err, t)
 
 	// set the current time one day later
-	defer newFakeTime(Day)()
+	newFakeTime()
 
 	// this would make us rotate
 	b := []byte("fooo!")
@@ -236,7 +237,7 @@ func TestMaxBackups(t *testing.T) {
 	fileCount(dir, 1, t)
 
 	// set the current time one day later
-	defer newFakeTime(Day)()
+	newFakeTime()
 
 	// this will put us over the max
 	b2 := []byte("foooooo!")
@@ -254,7 +255,7 @@ func TestMaxBackups(t *testing.T) {
 	fileCount(dir, 2, t)
 
 	// set the current time one day later
-	defer newFakeTime(Day)()
+	newFakeTime()
 
 	// this will make us rotate again
 	n, err = l.Write(b2)
@@ -281,7 +282,7 @@ func TestMaxBackups(t *testing.T) {
 	// now test that we don't delete directories or non-logfile files
 
 	// set the current time one day later
-	defer newFakeTime(Day)()
+	newFakeTime()
 
 	// create a file that is close to but different from the logfile name.
 	/// It shouldn't get caught by our deletion filters.
@@ -295,7 +296,7 @@ func TestMaxBackups(t *testing.T) {
 	err = os.Mkdir(notlogfiledir, 0700)
 	isNil(err, t)
 
-	defer newFakeTime(Day)()
+	newFakeTime()
 
 	// this will make us rotate again
 	n, err = l.Write(b2)
@@ -329,6 +330,10 @@ func TestMaxBackups(t *testing.T) {
 
 func TestMaxAge(t *testing.T) {
 	currentTime = fakeTime
+
+	// change how maxage is interpreted from days to milliseconds
+	day = time.Millisecond
+
 	// This test uses ModTime on files, and so we need to make sure we're using
 	// the most current time possible.
 	fakeCurrentTime = time.Now()
@@ -339,7 +344,7 @@ func TestMaxAge(t *testing.T) {
 		Dir:        dir,
 		NameFormat: format,
 		MaxSize:    10,
-		MaxAge:     10 * time.Millisecond,
+		MaxAge:     10,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -415,7 +420,7 @@ func TestDefaultDirAndName(t *testing.T) {
 	err = l.Close()
 	isNil(err, t)
 
-	defer newFakeTime(Day)()
+	newFakeTime()
 
 	// even though the old file is under MaxSize, we should write a new file
 	// to prevent two processes using lumberjack from writing to the same file.
@@ -452,7 +457,7 @@ func TestRotate(t *testing.T) {
 	fileCount(dir, 1, t)
 
 	// set the current time one day later
-	defer newFakeTime(Day)()
+	newFakeTime()
 
 	err = l.Rotate()
 	isNil(err, t)
@@ -467,7 +472,7 @@ func TestRotate(t *testing.T) {
 	fileCount(dir, 2, t)
 
 	// set the current time one day later
-	defer newFakeTime(Day)()
+	newFakeTime()
 
 	err = l.Rotate()
 	isNil(err, t)
@@ -488,6 +493,28 @@ func TestRotate(t *testing.T) {
 
 	// this will use the new fake time
 	existsWithLen(filename3, n, t)
+}
+
+func TestUnmarshal(t *testing.T) {
+	data := []byte(`
+{
+	"dir": "foo",
+	"nameformat": "bar",
+	"maxsize": 5,
+	"maxage": 10,
+	"maxbackups": 3,
+	"localtime": true
+}`[1:])
+
+	l := Logger{}
+	err := json.Unmarshal(data, &l)
+	isNil(err, t)
+	equals("foo", l.Dir, t)
+	equals("bar", l.NameFormat, t)
+	equals(int64(5), l.MaxSize, t)
+	equals(10, l.MaxAge, t)
+	equals(3, l.MaxBackups, t)
+	equals(true, l.LocalTime, t)
 }
 
 // makeTempDir creates a file with a semi-unique name in the OS temp directory.
@@ -528,12 +555,8 @@ func fileCount(dir string, exp int, t testing.TB) {
 }
 
 // newFakeTime sets the fake "current time" to one day later.
-func newFakeTime(later time.Duration) func() {
-	old := fakeCurrentTime
-	fakeCurrentTime = fakeCurrentTime.Add(later)
-	return func() {
-		fakeCurrentTime = old
-	}
+func newFakeTime() {
+	fakeCurrentTime = fakeCurrentTime.Add(time.Hour * 24)
 }
 
 func notExist(path string, t testing.TB) {

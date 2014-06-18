@@ -28,7 +28,7 @@ log.SetOutput(&lumberjack.Logger{
     NameFormat: time.RFC822 + ".log",
     MaxSize:    lumberjack.Gigabyte,
     MaxBackups: 3,
-    MaxAge:     lumberjack.Week * 4,
+    MaxAge:     28,
 })
 ```
 
@@ -39,9 +39,6 @@ log.SetOutput(&lumberjack.Logger{
 const (
     Megabyte = 1024 * 1024
     Gigabyte = 1024 * Megabyte
-
-    Day  = 24 * time.Hour
-    Week = 7 * Day
 )
 ```
 
@@ -62,10 +59,11 @@ type Logger struct {
     // rolled. It defaults to 100 megabytes.
     MaxSize int64 `json:"maxsize" yaml:"maxsize"`
 
-    // MaxAge is the maximum time to retain old log files based on
-    // FileInfo.ModTime.  The default is not to remove old log files based on
-    // age.
-    MaxAge time.Duration `json:"maxage" yaml:"maxage"`
+    // MaxAge is the maximum number of days to retain old log files based on
+    // FileInfo.ModTime.  Note that a day is defined as 24 hours and may not
+    // exactly correspond to calendar days due to daylight savings, leap
+    // seconds, etc. The default is not to remove old log files based on age.
+    MaxAge int `json:"maxage" yaml:"maxage"`
 
     // MaxBackups is the maximum number of old log files to retain.  The default
     // is to retain all old log files (though MaxAge may still cause them to get
@@ -100,7 +98,7 @@ Whenever a new file gets created, old log files may be deleted.  The log file
 directory is scanned for files that match NameFormat.  The most recent files
 according to their NameFormat date will be retained, up to a number equal to
 MaxBackups (or all of them if MaxBackups is 0).  Any files with a last
-modified time (based on FileInfo.ModTime) older than MaxAge are deleted,
+modified time (based on FileInfo.ModTime) older than MaxAge days are deleted,
 regardless of MaxBackups.
 
 If MaxBackups and MaxAge are both 0, no old log files will be deleted.

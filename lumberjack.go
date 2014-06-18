@@ -30,12 +30,6 @@ const (
 	Megabyte = 1024 * 1024
 	Gigabyte = 1024 * Megabyte
 
-	// Note that lumberjack days and weeks may not exactly conform to calendar
-	// days and weeks due to daylight savings, leap seconds, etc.
-
-	Day  = 24 * time.Hour
-	Week = 7 * Day
-
 	defaultNameFormat = "2006-01-02T15-04-05.000.log"
 	defaultMaxSize    = 100 * Megabyte
 )
@@ -66,7 +60,7 @@ var _ io.WriteCloser = (*Logger)(nil)
 // directory is scanned for files that match NameFormat.  The most recent files
 // according to their NameFormat date will be retained, up to a number equal to
 // MaxBackups (or all of them if MaxBackups is 0).  Any files with a last
-// modified time (based on FileInfo.ModTime) older than MaxAge are deleted,
+// modified time (based on FileInfo.ModTime) older than MaxAge days are deleted,
 // regardless of MaxBackups.
 //
 // If MaxBackups and MaxAge are both 0, no old log files will be deleted.
@@ -83,10 +77,11 @@ type Logger struct {
 	// rolled. It defaults to 100 megabytes.
 	MaxSize int64 `json:"maxsize" yaml:"maxsize"`
 
-	// MaxAge is the maximum time to retain old log files based on
-	// FileInfo.ModTime.  The default is not to remove old log files based on
-	// age.
-	MaxAge time.Duration `json:"maxage" yaml:"maxage"`
+	// MaxAge is the maximum number of days to retain old log files based on
+	// FileInfo.ModTime.  Note that a day is defined as 24 hours and may not
+	// exactly correspond to calendar days due to daylight savings, leap
+	// seconds, etc. The default is not to remove old log files based on age.
+	MaxAge int `json:"maxage" yaml:"maxage"`
 
 	// MaxBackups is the maximum number of old log files to retain.  The default
 	// is to retain all old log files (though MaxAge may still cause them to get
@@ -102,8 +97,14 @@ type Logger struct {
 	mu   sync.Mutex
 }
 
-// currentTime is only used for testing. Normally it's the time.Now() function.
-var currentTime = time.Now
+var (
+	// currentTime exists so it can be mocked out by tests.
+	currentTime = time.Now
+
+	// day is the units that MaxAge converts into.  It is a variable so we can
+	// change it during tests.
+	day = 24 * time.Hour
+)
 
 // Write implements io.Writer.  If a write would cause the log file to be larger
 // than MaxSize, a new log file is created using the current time formatted with
@@ -269,7 +270,9 @@ func (l *Logger) cleanup() error {
 		files = files[:l.MaxBackups]
 	}
 	if l.MaxAge > 0 {
-		cutoff := currentTime().Add(-1 * l.MaxAge)
+		diff := time.Duration(-1 * int64(day) * int64(l.MaxAge))
+
+		cutoff := currentTime().Add(diff)
 
 		for _, f := range files {
 			if f.ModTime().Before(cutoff) {
@@ -322,11 +325,14 @@ func (l *Logger) oldLogFiles() ([]os.FileInfo, error) {
 	return logFiles, nil
 }
 
+// isLogFile reports where the name of f fits the format of a logfile created by
+// this Logger.
 func (l *Logger) isLogFile(f os.FileInfo) bool {
 	_, err := time.Parse(l.format(), filepath.Base(f.Name()))
 	return err == nil
 }
 
+// max returns the maximum size of log files before rolling..
 func (l *Logger) max() int64 {
 	if l.MaxSize == 0 {
 		return defaultMaxSize
@@ -334,6 +340,7 @@ func (l *Logger) max() int64 {
 	return l.MaxSize
 }
 
+// dir returns the directory in which log files should be stored.
 func (l *Logger) dir() string {
 	if l.Dir != "" {
 		return l.Dir
@@ -341,6 +348,7 @@ func (l *Logger) dir() string {
 	return os.TempDir()
 }
 
+// format returns the name format for log files.
 func (l *Logger) format() string {
 	if l.NameFormat != "" {
 		return l.NameFormat
