@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/BurntSushi/toml"
+	"gopkg.in/yaml.v1"
 )
 
 // !!!NOTE!!!
@@ -495,7 +498,7 @@ func TestRotate(t *testing.T) {
 	existsWithLen(filename3, n, t)
 }
 
-func TestUnmarshal(t *testing.T) {
+func TestJson(t *testing.T) {
 	data := []byte(`
 {
 	"dir": "foo",
@@ -515,6 +518,47 @@ func TestUnmarshal(t *testing.T) {
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
+}
+
+func TestYaml(t *testing.T) {
+	data := []byte(`
+dir: foo
+nameformat: bar
+maxsize: 5
+maxage: 10
+maxbackups: 3
+localtime: true`[1:])
+
+	l := Logger{}
+	err := yaml.Unmarshal(data, &l)
+	isNil(err, t)
+	equals("foo", l.Dir, t)
+	equals("bar", l.NameFormat, t)
+	equals(int64(5), l.MaxSize, t)
+	equals(10, l.MaxAge, t)
+	equals(3, l.MaxBackups, t)
+	equals(true, l.LocalTime, t)
+}
+
+func TestToml(t *testing.T) {
+	data := `
+dir = "foo"
+nameformat = "bar"
+maxsize = 5
+maxage = 10
+maxbackups = 3
+localtime = true`[1:]
+
+	l := Logger{}
+	md, err := toml.Decode(data, &l)
+	isNil(err, t)
+	equals("foo", l.Dir, t)
+	equals("bar", l.NameFormat, t)
+	equals(int64(5), l.MaxSize, t)
+	equals(10, l.MaxAge, t)
+	equals(3, l.MaxBackups, t)
+	equals(true, l.LocalTime, t)
+	equals(0, len(md.Undecoded()), t)
 }
 
 // makeTempDir creates a file with a semi-unique name in the OS temp directory.
