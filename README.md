@@ -25,7 +25,7 @@ Code:
 ```go
 log.SetOutput(&lumberjack.Logger{
     Dir:        "/var/log/myapp/",
-    NameFormat: time.RFC822 + ".log",
+    NameFormat: "2006-01-02T15-04-05.000.log",
     MaxSize:    lumberjack.Gigabyte,
     MaxBackups: 3,
     MaxAge:     28,
