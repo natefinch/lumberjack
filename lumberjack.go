@@ -263,7 +263,7 @@ func (l *Logger) cleanup() error {
 		return err
 	}
 	
-	if len(files) == 0 {
+	if len(files) < l.MaxBackups {
 		return nil
 	}
 
