@@ -262,6 +262,10 @@ func (l *Logger) cleanup() error {
 	if err != nil {
 		return err
 	}
+	
+	if len(files) == 0 {
+		return nil
+	}
 
 	var deletes []os.FileInfo
 
