@@ -19,9 +19,6 @@ import (
 // regular) failures, because they're all messing with the same global variable
 // that controls the logic's mocked time.Now.  So... don't do that.
 
-// make sure we set the format to something safe for windows, too.
-const format = "2006-01-02T15-04-05.000"
-
 // Since all the tests uses the time to determine filenames etc, we need to
 // control the wall clock as much as possible, which means having a wall clock
 // that doesn't change unless we want it to.
@@ -37,8 +34,7 @@ func TestNewFile(t *testing.T) {
 	dir := makeTempDir("TestNewFile", t)
 	defer os.RemoveAll(dir)
 	l := &Logger{
-		Dir:        dir,
-		NameFormat: format,
+		Filename: logFile(dir),
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -61,8 +57,7 @@ func TestOpenExisting(t *testing.T) {
 	existsWithLen(filename, len(data), t)
 
 	l := &Logger{
-		Dir:        dir,
-		NameFormat: format,
+		Filename: filename,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -79,12 +74,12 @@ func TestOpenExisting(t *testing.T) {
 
 func TestWriteTooLong(t *testing.T) {
 	currentTime = fakeTime
+	megabyte = 1
 	dir := makeTempDir("TestWriteTooLong", t)
 	defer os.RemoveAll(dir)
 	l := &Logger{
-		Dir:        dir,
-		NameFormat: format,
-		MaxSize:    5,
+		Filename: logFile(dir),
+		MaxSize:  5,
 	}
 	defer l.Close()
 	b := []byte("booooooooooooooo!")
@@ -99,12 +94,12 @@ func TestWriteTooLong(t *testing.T) {
 
 func TestMakeLogDir(t *testing.T) {
 	currentTime = fakeTime
-	dir := time.Now().Format("TestMakeLogDir" + format)
+	dir := time.Now().Format("TestMakeLogDir" + backupTimeFormat)
 	dir = filepath.Join(os.TempDir(), dir)
 	defer os.RemoveAll(dir)
+	filename := logFile(dir)
 	l := &Logger{
-		Dir:        dir,
-		NameFormat: format,
+		Filename: filename,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -113,51 +108,34 @@ func TestMakeLogDir(t *testing.T) {
 	equals(len(b), n, t)
 	existsWithLen(logFile(dir), n, t)
 	fileCount(dir, 1, t)
-}
-
-func TestDefaultLogDir(t *testing.T) {
-	currentTime = fakeTime
-	dir := os.TempDir()
-	l := &Logger{
-		NameFormat: format,
-	}
-	defer l.Close()
-	b := []byte("boo!")
-	n, err := l.Write(b)
-	defer os.Remove(logFile(dir))
-
-	isNil(err, t)
-	equals(len(b), n, t)
-	existsWithLen(logFile(dir), n, t)
 }
 
 func TestDefaultFilename(t *testing.T) {
 	currentTime = fakeTime
-	dir := makeTempDir("TestDefaultFilename", t)
-	defer os.RemoveAll(dir)
-	l := &Logger{
-		Dir: dir,
-	}
+	dir := os.TempDir()
+	filename := filepath.Join(dir, filepath.Base(os.Args[0])+"-lumberjack.log")
+	l := &Logger{}
 	defer l.Close()
 	b := []byte("boo!")
 	n, err := l.Write(b)
+	defer os.Remove(filename)
+
 	isNil(err, t)
 	equals(len(b), n, t)
-
-	name := filepath.Join(dir, fakeTime().UTC().Format(defaultNameFormat))
-	existsWithLen(name, n, t)
-	fileCount(dir, 1, t)
+	existsWithLen(filename, n, t)
 }
 
 func TestAutoRotate(t *testing.T) {
 	currentTime = fakeTime
+	megabyte = 1
+
 	dir := makeTempDir("TestAutoRotate", t)
 	defer os.RemoveAll(dir)
 
+	filename := logFile(dir)
 	l := &Logger{
-		Dir:        dir,
-		NameFormat: format,
-		MaxSize:    10,
+		Filename: filename,
+		MaxSize:  10,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -165,11 +143,9 @@ func TestAutoRotate(t *testing.T) {
 	isNil(err, t)
 	equals(len(b), n, t)
 
-	filename := logFile(dir)
 	existsWithLen(filename, n, t)
 	fileCount(dir, 1, t)
 
-	// set the current time one day later
 	newFakeTime()
 
 	b2 := []byte("foooooo!")
@@ -177,33 +153,33 @@ func TestAutoRotate(t *testing.T) {
 	isNil(err, t)
 	equals(len(b2), n, t)
 
-	// this will use the new fake time
-	newFilename := logFile(dir)
-	existsWithLen(newFilename, n, t)
+	// the old logfile should be moved aside and the main logfile should have
+	// only the last write in it.
+	existsWithLen(filename, n, t)
 
-	// make sure the old file still exists with the same size.
-	existsWithLen(filename, len(b), t)
+	// the backup file will use the current fake time and have the old contents.
+	existsWithLen(backupFile(dir), len(b), t)
 
 	fileCount(dir, 2, t)
 }
 
 func TestFirstWriteRotate(t *testing.T) {
 	currentTime = fakeTime
+	megabyte = 1
 	dir := makeTempDir("TestFirstWriteRotate", t)
 	defer os.RemoveAll(dir)
 
+	filename := logFile(dir)
 	l := &Logger{
-		Dir:        dir,
-		NameFormat: format,
-		MaxSize:    10,
+		Filename: filename,
+		MaxSize:  10,
 	}
 	defer l.Close()
 
-	filename := logFile(dir)
-	err := ioutil.WriteFile(filename, []byte("boooooo!"), 0600)
+	start := []byte("boooooo!")
+	err := ioutil.WriteFile(filename, start, 0600)
 	isNil(err, t)
 
-	// set the current time one day later
 	newFakeTime()
 
 	// this would make us rotate
@@ -212,20 +188,21 @@ func TestFirstWriteRotate(t *testing.T) {
 	isNil(err, t)
 	equals(len(b), n, t)
 
-	filename2 := logFile(dir)
-	existsWithLen(filename2, n, t)
+	existsWithLen(filename, n, t)
+	existsWithLen(backupFile(dir), len(start), t)
 
 	fileCount(dir, 2, t)
 }
 
 func TestMaxBackups(t *testing.T) {
 	currentTime = fakeTime
+	megabyte = 1
 	dir := makeTempDir("TestMaxBackups", t)
 	defer os.RemoveAll(dir)
 
+	filename := logFile(dir)
 	l := &Logger{
-		Dir:        dir,
-		NameFormat: format,
+		Filename:   filename,
 		MaxSize:    10,
 		MaxBackups: 1,
 	}
@@ -235,11 +212,9 @@ func TestMaxBackups(t *testing.T) {
 	isNil(err, t)
 	equals(len(b), n, t)
 
-	firstFilename := logFile(dir)
-	existsWithLen(firstFilename, n, t)
+	existsWithLen(filename, n, t)
 	fileCount(dir, 1, t)
 
-	// set the current time one day later
 	newFakeTime()
 
 	// this will put us over the max
@@ -249,15 +224,14 @@ func TestMaxBackups(t *testing.T) {
 	equals(len(b2), n, t)
 
 	// this will use the new fake time
-	secondFilename := logFile(dir)
-	existsWithLen(secondFilename, n, t)
+	secondFilename := backupFile(dir)
+	existsWithLen(secondFilename, len(b), t)
 
 	// make sure the old file still exists with the same size.
-	existsWithLen(firstFilename, len(b), t)
+	existsWithLen(filename, n, t)
 
 	fileCount(dir, 2, t)
 
-	// set the current time one day later
 	newFakeTime()
 
 	// this will make us rotate again
@@ -266,8 +240,10 @@ func TestMaxBackups(t *testing.T) {
 	equals(len(b2), n, t)
 
 	// this will use the new fake time
-	thirdFilename := logFile(dir)
-	existsWithLen(thirdFilename, n, t)
+	thirdFilename := backupFile(dir)
+	existsWithLen(thirdFilename, len(b2), t)
+
+	existsWithLen(filename, n, t)
 
 	// we need to wait a little bit since the files get deleted on a different
 	// goroutine.
@@ -277,25 +253,24 @@ func TestMaxBackups(t *testing.T) {
 	fileCount(dir, 2, t)
 
 	// second file name should still exist
-	existsWithLen(secondFilename, n, t)
+	existsWithLen(thirdFilename, len(b2), t)
 
-	// should have deleted the first filename
-	notExist(firstFilename, t)
+	// should have deleted the first backup
+	notExist(secondFilename, t)
 
 	// now test that we don't delete directories or non-logfile files
 
-	// set the current time one day later
 	newFakeTime()
 
 	// create a file that is close to but different from the logfile name.
-	/// It shouldn't get caught by our deletion filters.
+	// It shouldn't get caught by our deletion filters.
 	notlogfile := logFile(dir) + ".foo"
 	err = ioutil.WriteFile(notlogfile, []byte("data"), 0644)
 	isNil(err, t)
 
 	// Make a directory that exactly matches our log file filters... it still
 	// shouldn't get caught by the deletion filter since it's a directory.
-	notlogfiledir := logFile(dir)
+	notlogfiledir := backupFile(dir)
 	err = os.Mkdir(notlogfiledir, 0700)
 	isNil(err, t)
 
@@ -307,8 +282,8 @@ func TestMaxBackups(t *testing.T) {
 	equals(len(b2), n, t)
 
 	// this will use the new fake time
-	fourthFilename := logFile(dir)
-	existsWithLen(fourthFilename, n, t)
+	fourthFilename := backupFile(dir)
+	existsWithLen(fourthFilename, len(b2), t)
 
 	// we need to wait a little bit since the files get deleted on a different
 	// goroutine.
@@ -318,11 +293,13 @@ func TestMaxBackups(t *testing.T) {
 	// not log file, and the directory
 	fileCount(dir, 4, t)
 
-	// second file name should still exist
-	existsWithLen(thirdFilename, n, t)
+	// third file name should still exist
+	existsWithLen(filename, n, t)
+
+	existsWithLen(fourthFilename, len(b2), t)
 
 	// should have deleted the first filename
-	notExist(firstFilename, t)
+	notExist(thirdFilename, t)
 
 	// the not-a-logfile should still exist
 	exists(notlogfile, t)
@@ -333,21 +310,16 @@ func TestMaxBackups(t *testing.T) {
 
 func TestMaxAge(t *testing.T) {
 	currentTime = fakeTime
+	megabyte = 1
 
-	// change how maxage is interpreted from days to milliseconds
-	day = time.Millisecond
-
-	// This test uses ModTime on files, and so we need to make sure we're using
-	// the most current time possible.
-	fakeCurrentTime = time.Now()
 	dir := makeTempDir("TestMaxAge", t)
 	defer os.RemoveAll(dir)
 
+	filename := logFile(dir)
 	l := &Logger{
-		Dir:        dir,
-		NameFormat: format,
-		MaxSize:    10,
-		MaxAge:     10,
+		Filename: filename,
+		MaxSize:  10,
+		MaxAge:   1,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -355,45 +327,122 @@ func TestMaxAge(t *testing.T) {
 	isNil(err, t)
 	equals(len(b), n, t)
 
-	filename := logFile(dir)
 	existsWithLen(filename, n, t)
 	fileCount(dir, 1, t)
 
-	// We need to wait for wall clock time since MaxAge uses file ModTime, which
-	// can't be mocked.
-	<-time.After(50 * time.Millisecond)
-	fakeCurrentTime = time.Now()
+	// two days later
+	newFakeTime()
 
 	b2 := []byte("foooooo!")
 	n, err = l.Write(b2)
 	isNil(err, t)
 	equals(len(b2), n, t)
+	existsWithLen(backupFile(dir), len(b), t)
 
 	// we need to wait a little bit since the files get deleted on a different
 	// goroutine.
 	<-time.After(10 * time.Millisecond)
 
-	// We should have just one log file
-	fileCount(dir, 1, t)
+	// We should still have 2 log files, since the most recent backup was just
+	// created.
+	fileCount(dir, 2, t)
 
-	// this will use the new fake time
-	newFilename := logFile(dir)
-	existsWithLen(newFilename, n, t)
+	existsWithLen(filename, len(b2), t)
 
 	// we should have deleted the old file due to being too old
-	notExist(filename, t)
+	existsWithLen(backupFile(dir), len(b), t)
+
+	// two days later
+	newFakeTime()
+
+	b3 := []byte("foooooo!")
+	n, err = l.Write(b2)
+	isNil(err, t)
+	equals(len(b3), n, t)
+	existsWithLen(backupFile(dir), len(b2), t)
+
+	// we need to wait a little bit since the files get deleted on a different
+	// goroutine.
+	<-time.After(10 * time.Millisecond)
+
+	// We should have 2 log files - the main log file, and the most recent
+	// backup.  The earlier backup is past the cutoff and should be gone.
+	fileCount(dir, 2, t)
+
+	existsWithLen(filename, len(b3), t)
+
+	// we should have deleted the old file due to being too old
+	existsWithLen(backupFile(dir), len(b2), t)
+
+}
+
+func TestOldLogFiles(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+
+	dir := makeTempDir("TestOldLogFiles", t)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	data := []byte("data")
+	err := ioutil.WriteFile(filename, data, 07)
+	isNil(err, t)
+
+	// This gives us a time with the same precision as the time we get from the
+	// timestamp in the name.
+	t1, err := time.Parse(backupTimeFormat, fakeTime().UTC().Format(backupTimeFormat))
+	isNil(err, t)
+
+	backup := backupFile(dir)
+	err = ioutil.WriteFile(backup, data, 07)
+	isNil(err, t)
+
+	newFakeTime()
+
+	t2, err := time.Parse(backupTimeFormat, fakeTime().UTC().Format(backupTimeFormat))
+	isNil(err, t)
+
+	backup2 := backupFile(dir)
+	err = ioutil.WriteFile(backup2, data, 07)
+	isNil(err, t)
+
+	l := &Logger{Filename: filename}
+	files, err := l.oldLogFiles()
+	isNil(err, t)
+	equals(2, len(files), t)
+
+	// should be sorted by newest file first, which would be t2
+	equals(t2, files[0].timestamp, t)
+	equals(t1, files[1].timestamp, t)
+}
+
+func TestTimeFromName(t *testing.T) {
+	l := &Logger{Filename: "/var/log/myfoo/foo.log"}
+	prefix, ext := l.prefixAndExt()
+	val := l.timeFromName("foo-2014-05-04T14-44-33.555.log", prefix, ext)
+	equals("2014-05-04T14-44-33.555", val, t)
+
+	val = l.timeFromName("foo-2014-05-04T14-44-33.555", prefix, ext)
+	equals("", val, t)
+
+	val = l.timeFromName("2014-05-04T14-44-33.555.log", prefix, ext)
+	equals("", val, t)
+
+	val = l.timeFromName("foo.log", prefix, ext)
+	equals("", val, t)
 }
 
 func TestLocalTime(t *testing.T) {
 	currentTime = fakeTime
+	megabyte = 1
 
 	dir := makeTempDir("TestLocalTime", t)
 	defer os.RemoveAll(dir)
 
 	l := &Logger{
-		Dir:        dir,
-		NameFormat: format,
-		LocalTime:  true,
+		Filename:  logFile(dir),
+		MaxSize:   10,
+		LocalTime: true,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -401,41 +450,13 @@ func TestLocalTime(t *testing.T) {
 	isNil(err, t)
 	equals(len(b), n, t)
 
-	filename := logFileLocal(dir)
-	existsWithLen(filename, n, t)
-}
-
-func TestDefaultDirAndName(t *testing.T) {
-	currentTime = fakeTime
-
-	l := &Logger{MaxSize: Megabyte}
-	defer l.Close()
-	b := []byte("boo!")
-	n, err := l.Write(b)
-	filename := filepath.Join(os.TempDir(), fakeTime().UTC().Format(defaultNameFormat))
-	defer os.Remove(filename)
-
+	b2 := []byte("fooooooo!")
+	n2, err := l.Write(b2)
 	isNil(err, t)
-	equals(len(b), n, t)
+	equals(len(b2), n2, t)
 
-	existsWithLen(filename, n, t)
-
-	err = l.Close()
-	isNil(err, t)
-
-	newFakeTime()
-
-	// even though the old file is under MaxSize, we should write a new file
-	// to prevent two processes using lumberjack from writing to the same file.
-	n, err = l.Write(b)
-
-	f2 := filepath.Join(os.TempDir(), fakeTime().UTC().Format(defaultNameFormat))
-	defer os.Remove(f2)
-
-	isNil(err, t)
-	equals(len(b), n, t)
-
-	existsWithLen(f2, n, t)
+	existsWithLen(logFile(dir), n2, t)
+	existsWithLen(backupFileLocal(dir), n, t)
 }
 
 func TestRotate(t *testing.T) {
@@ -443,11 +464,12 @@ func TestRotate(t *testing.T) {
 	dir := makeTempDir("TestRotate", t)
 	defer os.RemoveAll(dir)
 
+	filename := logFile(dir)
+
 	l := &Logger{
-		Dir:        dir,
-		NameFormat: format,
+		Filename:   filename,
 		MaxBackups: 1,
-		MaxSize:    Megabyte,
+		MaxSize:    100, // megabytes
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -455,11 +477,9 @@ func TestRotate(t *testing.T) {
 	isNil(err, t)
 	equals(len(b), n, t)
 
-	filename := logFile(dir)
 	existsWithLen(filename, n, t)
 	fileCount(dir, 1, t)
 
-	// set the current time one day later
 	newFakeTime()
 
 	err = l.Rotate()
@@ -469,12 +489,11 @@ func TestRotate(t *testing.T) {
 	// goroutine.
 	<-time.After(10 * time.Millisecond)
 
-	filename2 := logFile(dir)
-	existsWithLen(filename2, 0, t)
-	existsWithLen(filename, n, t)
+	filename2 := backupFile(dir)
+	existsWithLen(filename2, n, t)
+	existsWithLen(filename, 0, t)
 	fileCount(dir, 2, t)
 
-	// set the current time one day later
 	newFakeTime()
 
 	err = l.Rotate()
@@ -484,9 +503,9 @@ func TestRotate(t *testing.T) {
 	// goroutine.
 	<-time.After(10 * time.Millisecond)
 
-	filename3 := logFile(dir)
+	filename3 := backupFile(dir)
 	existsWithLen(filename3, 0, t)
-	existsWithLen(filename2, 0, t)
+	existsWithLen(filename, 0, t)
 	fileCount(dir, 2, t)
 
 	b2 := []byte("foooooo!")
@@ -495,14 +514,13 @@ func TestRotate(t *testing.T) {
 	equals(len(b2), n, t)
 
 	// this will use the new fake time
-	existsWithLen(filename3, n, t)
+	existsWithLen(filename, n, t)
 }
 
 func TestJson(t *testing.T) {
 	data := []byte(`
 {
-	"dir": "foo",
-	"nameformat": "bar",
+	"filename": "foo",
 	"maxsize": 5,
 	"maxage": 10,
 	"maxbackups": 3,
@@ -512,9 +530,8 @@ func TestJson(t *testing.T) {
 	l := Logger{}
 	err := json.Unmarshal(data, &l)
 	isNil(err, t)
-	equals("foo", l.Dir, t)
-	equals("bar", l.NameFormat, t)
-	equals(int64(5), l.MaxSize, t)
+	equals("foo", l.Filename, t)
+	equals(5, l.MaxSize, t)
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
@@ -522,8 +539,7 @@ func TestJson(t *testing.T) {
 
 func TestYaml(t *testing.T) {
 	data := []byte(`
-dir: foo
-nameformat: bar
+filename: foo
 maxsize: 5
 maxage: 10
 maxbackups: 3
@@ -532,9 +548,8 @@ localtime: true`[1:])
 	l := Logger{}
 	err := yaml.Unmarshal(data, &l)
 	isNil(err, t)
-	equals("foo", l.Dir, t)
-	equals("bar", l.NameFormat, t)
-	equals(int64(5), l.MaxSize, t)
+	equals("foo", l.Filename, t)
+	equals(5, l.MaxSize, t)
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
@@ -542,8 +557,7 @@ localtime: true`[1:])
 
 func TestToml(t *testing.T) {
 	data := `
-dir = "foo"
-nameformat = "bar"
+filename = "foo"
 maxsize = 5
 maxage = 10
 maxbackups = 3
@@ -552,9 +566,8 @@ localtime = true`[1:]
 	l := Logger{}
 	md, err := toml.Decode(data, &l)
 	isNil(err, t)
-	equals("foo", l.Dir, t)
-	equals("bar", l.NameFormat, t)
-	equals(int64(5), l.MaxSize, t)
+	equals("foo", l.Filename, t)
+	equals(5, l.MaxSize, t)
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
@@ -565,7 +578,7 @@ localtime = true`[1:]
 // It should be based on the name of the test, to keep parallel tests from
 // colliding, and must be cleaned up after the test is finished.
 func makeTempDir(name string, t testing.TB) string {
-	dir := time.Now().Format(name + format)
+	dir := time.Now().Format(name + backupTimeFormat)
 	dir = filepath.Join(os.TempDir(), dir)
 	isNilUp(os.Mkdir(dir, 0777), t, 1)
 	return dir
@@ -581,13 +594,21 @@ func existsWithLen(path string, length int, t testing.TB) {
 // logFile returns the log file name in the given directory for the current fake
 // time.
 func logFile(dir string) string {
-	return filepath.Join(dir, fakeTime().UTC().Format(format))
+	return filepath.Join(dir, "foobar.log")
+}
+
+func backupFile(dir string) string {
+	return filepath.Join(dir, "foobar-"+fakeTime().UTC().Format(backupTimeFormat)+".log")
+}
+
+func backupFileLocal(dir string) string {
+	return filepath.Join(dir, "foobar-"+fakeTime().Format(backupTimeFormat)+".log")
 }
 
 // logFileLocal returns the log file name in the given directory for the current
 // fake time using the local timezone.
 func logFileLocal(dir string) string {
-	return filepath.Join(dir, fakeTime().Format(format))
+	return filepath.Join(dir, fakeTime().Format(backupTimeFormat))
 }
 
 // fileCount checks that the number of files in the directory is exp.
@@ -598,9 +619,9 @@ func fileCount(dir string, exp int, t testing.TB) {
 	equalsUp(exp, len(files), t, 1)
 }
 
-// newFakeTime sets the fake "current time" to one day later.
+// newFakeTime sets the fake "current time" to two days later.
 func newFakeTime() {
-	fakeCurrentTime = fakeCurrentTime.Add(time.Hour * 24)
+	fakeCurrentTime = fakeCurrentTime.Add(time.Hour * 24 * 2)
 }
 
 func notExist(path string, t testing.TB) {

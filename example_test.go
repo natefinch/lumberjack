@@ -10,9 +10,8 @@ import (
 // the SetOutput function when your application starts.
 func Example() {
 	log.SetOutput(&lumberjack.Logger{
-		Dir:        "/var/log/myapp/",
-		NameFormat: "2006-01-02T15-04-05.000.log",
-		MaxSize:    lumberjack.Gigabyte,
+		Filename:   "/var/log/myapp/foo.log",
+		MaxSize:    500, // megabytes
 		MaxBackups: 3,
 		MaxAge:     28,
 	})
