@@ -1,4 +1,4 @@
-# lumberjack  [![GoDoc](https://godoc.org/github.com/natefinch/lumberjack?status.png)](https://godoc.org/github.com/natefinch/lumberjack) [![Build Status](https://travis-ci.org/natefinch/lumberjack.png)](https://travis-ci.org/natefinch/lumberjack)
+# lumberjack  [![GoDoc](https://godoc.org/gopkg.in/natefinch/lumberjack.v2?status.png)](https://godoc.org/github.com/natefinch/lumberjack) [![Build Status](https://drone.io/github.com/natefinch/lumberjack/status.png)](https://drone.io/github.com/natefinch/lumberjack/latest)
 
 ### Lumberjack is a Go package for writing logs to rolling files.
 
