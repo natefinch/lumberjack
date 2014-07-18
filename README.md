@@ -36,7 +36,7 @@ log.SetOutput(&lumberjack.Logger{
     Filename:   "/var/log/myapp/foo.log",
     MaxSize:    500, // megabytes
     MaxBackups: 3,
-    MaxAge:     28,
+    MaxAge:     28, //days
 })
 ```
 
