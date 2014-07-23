@@ -173,7 +173,7 @@ func (l *Logger) Rotate() error {
 // cleanup.
 func (l *Logger) rotate() error {
 	if err := l.close(); err != nil {
-		return nil
+		return err
 	}
 
 	if err := l.openNew(); err != nil {
