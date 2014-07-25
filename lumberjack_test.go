@@ -114,11 +114,11 @@ func TestDefaultFilename(t *testing.T) {
 	currentTime = fakeTime
 	dir := os.TempDir()
 	filename := filepath.Join(dir, filepath.Base(os.Args[0])+"-lumberjack.log")
+	defer os.Remove(filename)
 	l := &Logger{}
 	defer l.Close()
 	b := []byte("boo!")
 	n, err := l.Write(b)
-	defer os.Remove(filename)
 
 	isNil(err, t)
 	equals(len(b), n, t)
@@ -571,43 +571,6 @@ localtime = true`[1:]
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
 	equals(0, len(md.Undecoded()), t)
-}
-
-func TestMaintainMode(t *testing.T) {
-	currentTime = fakeTime
-	dir := makeTempDir("TestMaintainMode", t)
-	defer os.RemoveAll(dir)
-
-	filename := logFile(dir)
-
-	mode := os.FileMode(0770)
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, mode)
-	isNil(err, t)
-	f.Close()
-
-	l := &Logger{
-		Filename:   filename,
-		MaxBackups: 1,
-		MaxSize:    100, // megabytes
-	}
-	defer l.Close()
-	b := []byte("boo!")
-	n, err := l.Write(b)
-	isNil(err, t)
-	equals(len(b), n, t)
-
-	newFakeTime()
-
-	err = l.Rotate()
-	isNil(err, t)
-
-	filename2 := backupFile(dir)
-	info, err := os.Stat(filename)
-	isNil(err, t)
-	info2, err := os.Stat(filename2)
-	isNil(err, t)
-	equals(mode, info.Mode(), t)
-	equals(mode, info2.Mode(), t)
 }
 
 // makeTempDir creates a file with a semi-unique name in the OS temp directory.
