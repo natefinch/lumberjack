@@ -101,6 +101,9 @@ var (
 	// currentTime exists so it can be mocked out by tests.
 	currentTime = time.Now
 
+	// os_Stat exists so it can be mocked out by tests.
+	os_Stat = os.Stat
+
 	// megabyte is the conversion factor between MaxSize and bytes.  It is a
 	// variable so tests can mock it out and not need to write megabytes of data
 	// to disk.
@@ -191,19 +194,27 @@ func (l *Logger) openNew() error {
 	}
 
 	name := l.filename()
-	_, err = os.Stat(name)
+	mode := os.FileMode(0644)
+	info, err := os_Stat(name)
 	if err == nil {
+		// Copy the mode off the old logfile.
+		mode = info.Mode()
 		// move the existing file
 		newname := backupName(name, l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
 			return fmt.Errorf("can't rename log file: %s", err)
+		}
+
+		// this is a no-op anywhere but linux
+		if err := chown(name, info); err != nil {
+			return err
 		}
 	}
 
 	// we use truncate here because this should only get called when we've moved
 	// the file ourselves. if someone else creates the file in the meantime,
 	// just wipe out the contents.
-	f, err := os.OpenFile(l.filename(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return fmt.Errorf("can't open new logfile: %s", err)
 	}
@@ -234,7 +245,7 @@ func backupName(name string, local bool) string {
 // put it over the MaxSize, a new file is created.
 func (l *Logger) openExistingOrNew(writeLen int) error {
 	filename := l.filename()
-	info, err := os.Stat(filename)
+	info, err := os_Stat(filename)
 	if os.IsNotExist(err) {
 		return l.openNew()
 	}
