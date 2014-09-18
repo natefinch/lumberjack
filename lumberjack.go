@@ -193,7 +193,7 @@ func (l *Logger) openNew() error {
 		return fmt.Errorf("can't make directories for new logfile: %s", err)
 	}
 
-	name := l.filename()
+	name := l.File()
 	mode := os.FileMode(0644)
 	info, err := os_Stat(name)
 	if err == nil {
@@ -244,7 +244,7 @@ func backupName(name string, local bool) string {
 // would not put it over MaxSize.  If there is no such file or the write would
 // put it over the MaxSize, a new file is created.
 func (l *Logger) openExistingOrNew(writeLen int) error {
-	filename := l.filename()
+	filename := l.File()
 	info, err := os_Stat(filename)
 	if os.IsNotExist(err) {
 		return l.openNew()
@@ -268,7 +268,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 }
 
 // genFilename generates the name of the logfile from the current time.
-func (l *Logger) filename() string {
+func (l *Logger) File() string {
 	if l.Filename != "" {
 		return l.Filename
 	}
@@ -380,13 +380,13 @@ func (l *Logger) max() int64 {
 
 // dir returns the directory for the current filename.
 func (l *Logger) dir() string {
-	return filepath.Dir(l.filename())
+	return filepath.Dir(l.File())
 }
 
 // prefixAndExt returns the filename part and extension part from the Logger's
 // filename.
 func (l *Logger) prefixAndExt() (prefix, ext string) {
-	filename := filepath.Base(l.filename())
+	filename := filepath.Base(l.File())
 	ext = filepath.Ext(filename)
 	prefix = filename[:len(filename)-len(ext)] + "-"
 	return prefix, ext
