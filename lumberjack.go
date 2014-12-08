@@ -132,7 +132,7 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	}
 
 	if l.size+writeLen > l.max() {
-		if err := l.rotate(); err != nil {
+		if _, err := l.rotate(); err != nil {
 			return 0, err
 		}
 	}
@@ -147,17 +147,19 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 func (l *Logger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.close()
+	_, err := l.close()
+	return err
 }
 
 // close closes the file if it is open.
-func (l *Logger) close() error {
+func (l *Logger) close() (string, error) {
 	if l.file == nil {
-		return nil
+		return "", nil
 	}
+	fname := l.file.Name()
 	err := l.file.Close()
 	l.file = nil
-	return err
+	return fname, err
 }
 
 // Rotate causes Logger to close the existing log file and immediately create a
@@ -165,7 +167,7 @@ func (l *Logger) close() error {
 // rotations outside of the normal rotation rules, such as in response to
 // SIGHUP.  After rotating, this initiates a cleanup of old log files according
 // to the normal rules.
-func (l *Logger) Rotate() error {
+func (l *Logger) Rotate() (string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.rotate()
@@ -174,15 +176,16 @@ func (l *Logger) Rotate() error {
 // rotate closes the current file, moves it aside with a timestamp in the name,
 // (if it exists), opens a new file with the original filename, and then runs
 // cleanup.
-func (l *Logger) rotate() error {
-	if err := l.close(); err != nil {
-		return err
+func (l *Logger) rotate() (string, error) {
+	fname, err := l.close()
+	if err != nil {
+		return fname, nil
 	}
 
 	if err := l.openNew(); err != nil {
-		return err
+		return fname, err
 	}
-	return l.cleanup()
+	return fname, l.cleanup()
 }
 
 // openNew opens a new log file for writing, moving any old log file out of the
