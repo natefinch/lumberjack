@@ -132,7 +132,7 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	}
 
 	if l.size+writeLen > l.max() {
-		if err := l.rotate(); err != nil {
+		if _, err := l.rotate(); err != nil {
 			return 0, err
 		}
 	}
@@ -164,8 +164,8 @@ func (l *Logger) close() error {
 // new one.  This is a helper function for applications that want to initiate
 // rotations outside of the normal rotation rules, such as in response to
 // SIGHUP.  After rotating, this initiates a cleanup of old log files according
-// to the normal rules.
-func (l *Logger) Rotate() error {
+// to the normal rules. Returns the name of the newly rotated file.
+func (l *Logger) Rotate() (string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.rotate()
@@ -173,41 +173,44 @@ func (l *Logger) Rotate() error {
 
 // rotate closes the current file, moves it aside with a timestamp in the name,
 // (if it exists), opens a new file with the original filename, and then runs
-// cleanup.
-func (l *Logger) rotate() error {
+// cleanup. Returns the name of the newly rotated file.
+func (l *Logger) rotate() (string, error) {
 	if err := l.close(); err != nil {
-		return err
+		return "", nil
 	}
 
-	if err := l.openNew(); err != nil {
-		return err
+	fname, err := l.openNew()
+	if err != nil {
+		return "", err
 	}
-	return l.cleanup()
+	return fname, l.cleanup()
 }
 
 // openNew opens a new log file for writing, moving any old log file out of the
-// way.  This methods assumes the file has already been closed.
-func (l *Logger) openNew() error {
+// way.  This methods assumes the file has already been closed. This method also
+// returns the name of the file the old logs were put into.
+func (l *Logger) openNew() (string, error) {
 	err := os.MkdirAll(l.dir(), 0744)
 	if err != nil {
-		return fmt.Errorf("can't make directories for new logfile: %s", err)
+		return "", fmt.Errorf("can't make directories for new logfile: %s", err)
 	}
 
 	name := l.filename()
 	mode := os.FileMode(0644)
 	info, err := os_Stat(name)
+	var newname string
 	if err == nil {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
-		newname := backupName(name, l.LocalTime)
+		newname = backupName(name, l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
-			return fmt.Errorf("can't rename log file: %s", err)
+			return "", fmt.Errorf("can't rename log file: %s", err)
 		}
 
 		// this is a no-op anywhere but linux
 		if err := chown(name, info); err != nil {
-			return err
+			return "", err
 		}
 	}
 
@@ -216,11 +219,11 @@ func (l *Logger) openNew() error {
 	// just wipe out the contents.
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
-		return fmt.Errorf("can't open new logfile: %s", err)
+		return "", fmt.Errorf("can't open new logfile: %s", err)
 	}
 	l.file = f
 	l.size = 0
-	return nil
+	return newname, nil
 }
 
 // backupName creates a new filename from the given name, inserting a timestamp
@@ -247,7 +250,8 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 	filename := l.filename()
 	info, err := os_Stat(filename)
 	if os.IsNotExist(err) {
-		return l.openNew()
+		_, err := l.openNew()
+		return err
 	}
 	if err != nil {
 		return fmt.Errorf("error getting log file info: %s", err)
@@ -264,7 +268,8 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 		// if we fail to open the old log file for some reason, just ignore
 		// it and open a new log file.
 	}
-	return l.openNew()
+	_, err = l.openNew()
+	return err
 }
 
 // genFilename generates the name of the logfile from the current time.

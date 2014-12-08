@@ -482,7 +482,8 @@ func TestRotate(t *testing.T) {
 
 	newFakeTime()
 
-	err = l.Rotate()
+	rotatedFname, err := l.Rotate()
+	equals(rotatedFname, backupName(filename, l.LocalTime), t)
 	isNil(err, t)
 
 	// we need to wait a little bit since the files get deleted on a different
@@ -495,7 +496,8 @@ func TestRotate(t *testing.T) {
 	fileCount(dir, 2, t)
 	newFakeTime()
 
-	err = l.Rotate()
+	rotatedFname, err = l.Rotate()
+	equals(rotatedFname, backupName(filename, l.LocalTime), t)
 	isNil(err, t)
 
 	// we need to wait a little bit since the files get deleted on a different
