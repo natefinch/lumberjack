@@ -33,7 +33,8 @@ func TestMaintainMode(t *testing.T) {
 
 	newFakeTime()
 
-	err = l.Rotate()
+	rotatedFname, err := l.Rotate()
+	equals(rotatedFname, backupName(filename, l.LocalTime), t)
 	isNil(err, t)
 
 	filename2 := backupFile(dir)
@@ -72,7 +73,8 @@ func TestMaintainOwner(t *testing.T) {
 
 	newFakeTime()
 
-	err = l.Rotate()
+	rotatedFname, err := l.Rotate()
+	equals(rotatedFname, backupName(filename, l.LocalTime), t)
 	isNil(err, t)
 
 	equals(555, fakeC.uid, t)
