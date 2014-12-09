@@ -198,7 +198,7 @@ func (l *Logger) Backups() ([]LogInfo, error) {
 // openNew opens a new log file for writing, moving any old log file out of the
 // way.  This methods assumes the file has already been closed.
 func (l *Logger) openNew() error {
-	err := os.MkdirAll(l.dir(), 0744)
+	err := os.MkdirAll(l.Dir(), 0744)
 	if err != nil {
 		return fmt.Errorf("can't make directories for new logfile: %s", err)
 	}
@@ -320,7 +320,7 @@ func (l *Logger) cleanup() error {
 		return nil
 	}
 
-	go deleteAll(l.dir(), deletes)
+	go deleteAll(l.Dir(), deletes)
 
 	return nil
 }
@@ -336,7 +336,7 @@ func deleteAll(dir string, files []LogInfo) {
 // oldLogFiles returns the list of backup log files stored in the same
 // directory as the current log file, sorted by ModTime
 func (l *Logger) oldLogFiles() ([]LogInfo, error) {
-	files, err := ioutil.ReadDir(l.dir())
+	files, err := ioutil.ReadDir(l.Dir())
 	if err != nil {
 		return nil, fmt.Errorf("can't read log file directory: %s", err)
 	}
@@ -389,7 +389,7 @@ func (l *Logger) max() int64 {
 }
 
 // dir returns the directory for the current filename.
-func (l *Logger) dir() string {
+func (l *Logger) Dir() string {
 	return filepath.Dir(l.filename())
 }
 
