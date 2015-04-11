@@ -1,6 +1,12 @@
 
 # lumberjack  [![GoDoc](https://godoc.org/github.com/natefinch/lumberjack?status.png)](https://godoc.org/github.com/natefinch/lumberjack) [![Build Status](https://travis-ci.org/natefinch/lumberjack.png)](https://travis-ci.org/natefinch/lumberjack)
 
+# Deprecated
+
+This package, Luberjack (effectively v1) is deprecated in favor of v2 of Lumberjack, available from gopkg.in/natefinch/lumberjack.v2 (which redirects to the v2 branch of this repo).
+
+Developerment will not continue on this branch, and it is highly recommended that you migrate to v2.
+
 ### Lumberjack is a Go package for writing logs to rolling files.
 
 Lumberjack is intended to be one part of a logging infrastructure.
