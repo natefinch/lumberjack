@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"gopkg.in/yaml.v1"
+	"gopkg.in/yaml.v2"
 )
 
 // !!!NOTE!!!
