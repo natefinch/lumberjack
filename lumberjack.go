@@ -22,6 +22,10 @@
 package lumberjack
 
 import (
+	"bufio"
+	"bytes"
+	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -34,8 +38,9 @@ import (
 )
 
 const (
-	backupTimeFormat = "2006-01-02T15-04-05.000"
-	defaultMaxSize   = 100
+	backupTimeFormat      = "2006-01-02T15-04-05.000"
+	defaultMaxSize        = 100
+	compressFileExtension = ".gz"
 )
 
 // ensure we always implement io.WriteCloser
@@ -86,6 +91,10 @@ type Logger struct {
 	// is to retain all old log files (though MaxAge may still cause them to get
 	// deleted.)
 	MaxBackups int `json:"maxbackups" yaml:"maxbackups"`
+
+	// CompressBackups gzips the old log files specified by MaxAge and MaxBackups.
+	// The default is to leave backups uncompressed.
+	CompressBackups bool `json:"compressbackups" yaml:"compressbackups"`
 
 	// LocalTime determines if the time used for formatting the timestamps in
 	// backup files is the computer's local time.  The default is to use UTC
@@ -203,6 +212,14 @@ func (l *Logger) openNew() error {
 		newname := backupName(name, l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
 			return fmt.Errorf("can't rename log file: %s", err)
+		}
+
+		// Compress the backup if enabled
+		if l.CompressBackups == true {
+			err := compressLog(newname)
+			if err != nil {
+				return fmt.Errorf("Unable to compress backup log file: %s", err)
+			}
 		}
 
 		// this is a no-op anywhere but linux
@@ -335,6 +352,12 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 
 	prefix, ext := l.prefixAndExt()
 
+	// If compression is enabled, add the extension to
+	// check files
+	if l.CompressBackups == true {
+		ext = ext + compressFileExtension
+	}
+
 	for _, f := range files {
 		if f.IsDir() {
 			continue
@@ -354,6 +377,57 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 	sort.Sort(byFormatTime(logFiles))
 
 	return logFiles, nil
+}
+
+// compressLog compresses the log with given filename
+// using Gzip compression
+func compressLog(filename string) error {
+
+	// If a blank filename is passed
+	// return false
+	if filename == "" {
+		return errors.New("Filename cannot be blank")
+	}
+
+	rawfile, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer rawfile.Close()
+
+	// Calculate the buffer size for rawfile
+	info, _ := rawfile.Stat()
+
+	// Create the buffer
+	var size int64 = info.Size()
+	rawbytes := make([]byte, size)
+
+	// Read rawfile content into buffer
+	buffer := bufio.NewReader(rawfile)
+	_, err = buffer.Read(rawbytes)
+
+	if err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	writer := gzip.NewWriter(&buf)
+	writer.Write(rawbytes)
+	writer.Close()
+
+	// Write the file with the same permissions as the original source log
+	err = ioutil.WriteFile(filename+compressFileExtension, buf.Bytes(), info.Mode())
+
+	if err != nil {
+		return err
+	}
+
+	// Remove the uncompressed file
+	err = os.Remove(filename)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // timeFromName extracts the formatted time from the filename by stripping off

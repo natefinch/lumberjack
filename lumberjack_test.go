@@ -163,6 +163,45 @@ func TestAutoRotate(t *testing.T) {
 	fileCount(dir, 2, t)
 }
 
+func TestAutoRotateCompressed(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+
+	dir := makeTempDir("TestAutoRotateCompressed", t)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	l := &Logger{
+		Filename:        filename,
+		MaxSize:         10,
+		CompressBackups: true,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	existsWithLen(filename, n, t)
+	fileCount(dir, 1, t)
+
+	newFakeTime()
+
+	b2 := []byte("foooooo!")
+	n, err = l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+
+	// the old logfile should be moved aside and the main logfile should have
+	// only the last write in it.
+	existsWithLen(filename, n, t)
+
+	// the backup file will use the current fake time and have the old contents.
+	exists(backupFileCompressed(dir), t)
+
+	fileCount(dir, 2, t)
+}
+
 func TestFirstWriteRotate(t *testing.T) {
 	currentTime = fakeTime
 	megabyte = 1
@@ -579,7 +618,8 @@ func TestJson(t *testing.T) {
 	"maxsize": 5,
 	"maxage": 10,
 	"maxbackups": 3,
-	"localtime": true
+	"localtime": true,
+	"compressbackups": true
 }`[1:])
 
 	l := Logger{}
@@ -590,6 +630,7 @@ func TestJson(t *testing.T) {
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
+	equals(true, l.CompressBackups, t)
 }
 
 func TestYaml(t *testing.T) {
@@ -598,7 +639,8 @@ filename: foo
 maxsize: 5
 maxage: 10
 maxbackups: 3
-localtime: true`[1:])
+localtime: true
+compressbackups: true`[1:])
 
 	l := Logger{}
 	err := yaml.Unmarshal(data, &l)
@@ -608,6 +650,7 @@ localtime: true`[1:])
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
+	equals(true, l.CompressBackups, t)
 }
 
 func TestToml(t *testing.T) {
@@ -616,7 +659,8 @@ filename = "foo"
 maxsize = 5
 maxage = 10
 maxbackups = 3
-localtime = true`[1:]
+localtime = true
+compressbackups = true`[1:]
 
 	l := Logger{}
 	md, err := toml.Decode(data, &l)
@@ -626,6 +670,7 @@ localtime = true`[1:]
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
+	equals(true, l.CompressBackups, t)
 	equals(0, len(md.Undecoded()), t)
 }
 
@@ -654,6 +699,10 @@ func logFile(dir string) string {
 
 func backupFile(dir string) string {
 	return filepath.Join(dir, "foobar-"+fakeTime().UTC().Format(backupTimeFormat)+".log")
+}
+
+func backupFileCompressed(dir string) string {
+	return filepath.Join(dir, "foobar-"+fakeTime().UTC().Format(backupTimeFormat)+".log.gz")
 }
 
 func backupFileLocal(dir string) string {
