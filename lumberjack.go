@@ -22,10 +22,7 @@
 package lumberjack
 
 import (
-	"bufio"
-	"bytes"
 	"compress/gzip"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -216,8 +213,7 @@ func (l *Logger) openNew() error {
 
 		// Compress the backup if enabled
 		if l.CompressBackups == true {
-			err := compressLog(newname)
-			if err != nil {
+			if err := compressLog(newname); err != nil {
 				return fmt.Errorf("Unable to compress backup log file: %s", err)
 			}
 		}
@@ -382,53 +378,36 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 // compressLog compresses the log with given filename
 // using Gzip compression
 func compressLog(filename string) error {
-
-	// If a blank filename is passed
-	// return false
-	if filename == "" {
-		return errors.New("Filename cannot be blank")
-	}
-
-	rawfile, err := os.Open(filename)
+	// Open reader for backup logfile
+	reader, err := os.Open(filename)
 	if err != nil {
 		return err
 	}
 
-	// Calculate the buffer size for rawfile
-	info, _ := rawfile.Stat()
-
-	// Create the buffer
-	var size int64 = info.Size()
-	rawbytes := make([]byte, size)
-
-	// Read rawfile content into buffer
-	buffer := bufio.NewReader(rawfile)
-	_, err = buffer.Read(rawbytes)
-
+	// Open writer for compressed logfile
+	writer, err := os.Create(filename + compressFileExtension)
 	if err != nil {
 		return err
 	}
+	defer writer.Close()
 
-	var buf bytes.Buffer
-	writer := gzip.NewWriter(&buf)
-	writer.Write(rawbytes)
-	writer.Close()
+	// Wrap the writer in gzip
+	gzwriter := gzip.NewWriter(writer)
+	defer gzwriter.Close()
 
-	// Close the original file
-	rawfile.Close()
-
-	// Write the file with the same permissions as the original source log
-	err = ioutil.WriteFile(filename+compressFileExtension, buf.Bytes(), info.Mode())
-
-	if err != nil {
+	// Compress the file and ignore bytes copied
+	if _, err := io.Copy(gzwriter, reader); err != nil {
 		return err
 	}
+
+	// Close the reader before removing the uncompressed file
+	reader.Close()
 
 	// Remove the uncompressed file
-	err = os.Remove(filename)
-	if err != nil {
+	if err := os.Remove(filename); err != nil {
 		return err
 	}
+
 	return nil
 }
 

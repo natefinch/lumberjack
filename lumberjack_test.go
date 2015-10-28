@@ -1,8 +1,11 @@
 package lumberjack
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -177,7 +180,8 @@ func TestAutoRotateCompressed(t *testing.T) {
 		CompressBackups: true,
 	}
 	defer l.Close()
-	b := []byte("boo!")
+	testContent := "boo!"
+	b := []byte(testContent)
 	n, err := l.Write(b)
 	isNil(err, t)
 	equals(len(b), n, t)
@@ -197,7 +201,28 @@ func TestAutoRotateCompressed(t *testing.T) {
 	existsWithLen(filename, n, t)
 
 	// the backup file will use the current fake time and have the old contents.
-	exists(backupFileCompressed(dir), t)
+	compressedFilename := backupFileCompressed(dir)
+	exists(compressedFilename, t)
+
+	// Verify that the compressed file contains the content
+	// that we compressed
+
+	// Open the compressed file
+	reader, err := os.Open(compressedFilename)
+	isNil(err, t)
+
+	// Wrap the reader with gzip
+	gzreader, err := gzip.NewReader(reader)
+	isNil(err, t)
+
+	buf := bytes.NewBuffer(nil)
+	_, err = io.Copy(buf, gzreader)
+	isNil(err, t)
+
+	gzreader.Close()
+	reader.Close()
+
+	equals(buf.String(), testContent, t)
 
 	fileCount(dir, 2, t)
 }
