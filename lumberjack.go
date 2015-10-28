@@ -393,7 +393,6 @@ func compressLog(filename string) error {
 	if err != nil {
 		return err
 	}
-	defer rawfile.Close()
 
 	// Calculate the buffer size for rawfile
 	info, _ := rawfile.Stat()
@@ -414,6 +413,9 @@ func compressLog(filename string) error {
 	writer := gzip.NewWriter(&buf)
 	writer.Write(rawbytes)
 	writer.Close()
+
+	// Close the original file
+	rawfile.Close()
 
 	// Write the file with the same permissions as the original source log
 	err = ioutil.WriteFile(filename+compressFileExtension, buf.Bytes(), info.Mode())
