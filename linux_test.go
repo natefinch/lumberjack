@@ -15,6 +15,7 @@ func TestMaintainMode(t *testing.T) {
 
 	filename := logFile(dir)
 
+	syscall.Umask(0002)
 	mode := os.FileMode(0770)
 	f, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, mode)
 	isNil(err, t)
