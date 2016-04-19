@@ -92,6 +92,11 @@ type Logger struct {
 	// time.
 	LocalTime bool `json:"localtime" yaml:"localtime"`
 
+    // FilePermission represents a file's mode and permission bits.
+    // The bits have the same definition on all systems.
+    // Default: 664
+    FilePermission os.FileMode `json:"fileMode" yaml:"filemode"`
+
 	size int64
 	file *os.File
 	mu   sync.Mutex
@@ -188,13 +193,13 @@ func (l *Logger) rotate() error {
 // openNew opens a new log file for writing, moving any old log file out of the
 // way.  This methods assumes the file has already been closed.
 func (l *Logger) openNew() error {
-	err := os.MkdirAll(l.dir(), 0744)
+	err := os.MkdirAll(l.dir(), l.filePermission())
 	if err != nil {
 		return fmt.Errorf("can't make directories for new logfile: %s", err)
 	}
 
 	name := l.filename()
-	mode := os.FileMode(0644)
+	mode := l.filePermission()
 	info, err := os_Stat(name)
 	if err == nil {
 		// Copy the mode off the old logfile.
@@ -257,7 +262,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 		return l.rotate()
 	}
 
-	file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, l.filePermission())
 	if err != nil {
 		// if we fail to open the old log file for some reason, just ignore
 		// it and open a new log file.
@@ -392,6 +397,14 @@ func (l *Logger) prefixAndExt() (prefix, ext string) {
 	ext = filepath.Ext(filename)
 	prefix = filename[:len(filename)-len(ext)] + "-"
 	return prefix, ext
+}
+
+
+func (l *Logger) filePermission() os.FileMode {
+    if l.FilePermission == 0 {
+        return os.FileMode(664)
+    }
+    return l.FilePermission
 }
 
 // logInfo is a convenience struct to return the filename and its embedded
