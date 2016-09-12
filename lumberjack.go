@@ -35,6 +35,7 @@ import (
 
 const (
 	backupTimeFormat = "2006-01-02T15-04-05.000"
+	backupTimeFormatByRollingDate = "2006-01-02"
 	defaultMaxSize   = 100
 )
 
@@ -92,9 +93,19 @@ type Logger struct {
 	// time.
 	LocalTime bool `json:"localtime" yaml:"localtime"`
 
+	//default is false
+	IsRollingByDate bool `json:"isRollingByDate" yaml:"isRollingByDate"`
+
+	//default is 0 ,retain all old log files rolling by date. MaxBackupRollingByDate is the maximum number of old log files rolling by date
+	// to retain.
+	MaxBackupRollingByDate int `json:"MaxBackupRollingByDate" yaml:"MaxBackupRollingByDate"`
+
 	size int64
 	file *os.File
 	mu   sync.Mutex
+
+	oldTime time.Time
+	willRollingByDate bool
 }
 
 var (
@@ -134,6 +145,23 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	if l.size+writeLen > l.max() {
 		if err := l.rotate(); err != nil {
 			return 0, err
+		}
+	}
+	if l.IsRollingByDate {
+		t := currentTime()
+
+		//default time year is 1
+		if l.oldTime.Year() == 1 {
+			l.oldTime = t
+		}
+
+		if !t.Truncate(24 * time.Hour).Equal(l.oldTime.Truncate(24 * time.Hour)) {
+			l.willRollingByDate = true
+			if err := l.rotate(); err != nil {
+				return 0, err
+			}
+			l.oldTime = t
+			l.willRollingByDate = false
 		}
 	}
 
@@ -182,6 +210,11 @@ func (l *Logger) rotate() error {
 	if err := l.openNew(); err != nil {
 		return err
 	}
+	if l.IsRollingByDate && l.willRollingByDate && l.MaxBackupRollingByDate > 0 {
+		if err := l.cleanupRoolingByDate(); err != nil {
+			return  err
+		}
+	}
 	return l.cleanup()
 }
 
@@ -200,7 +233,7 @@ func (l *Logger) openNew() error {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
-		newname := backupName(name, l.LocalTime)
+		newname := l.backupName(name, l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
 			return fmt.Errorf("can't rename log file: %s", err)
 		}
@@ -226,7 +259,10 @@ func (l *Logger) openNew() error {
 // backupName creates a new filename from the given name, inserting a timestamp
 // between the filename and the extension, using the local time if requested
 // (otherwise UTC).
-func backupName(name string, local bool) string {
+func (l *Logger) backupName(name string, local bool) string {
+	if l.IsRollingByDate && l.willRollingByDate {
+		return l.oldTime.Format("2006-01-02")
+	}
 	dir := filepath.Dir(name)
 	filename := filepath.Base(name)
 	ext := filepath.Ext(filename)
@@ -276,6 +312,62 @@ func (l *Logger) filename() string {
 	name := filepath.Base(os.Args[0]) + "-lumberjack.log"
 	return filepath.Join(os.TempDir(), name)
 }
+
+
+
+// oldRollingDateLogFiles returns the list of backup log files rolling by date stored in the same
+// directory as the current log file, sorted by ModTime
+func (l *Logger) oldLogRollingDateFiles() ([]logInfo, error) {
+	files, err := ioutil.ReadDir(l.dir())
+	if err != nil {
+		return nil, fmt.Errorf("can't read log file directory: %s", err)
+	}
+	logFilesByRollingDate := []logInfo{}
+
+
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		t, err := time.Parse(backupTimeFormatByRollingDate, f.Name())
+		if err == nil{
+			logFilesByRollingDate = append(logFilesByRollingDate, logInfo{t, f})
+		}
+		// error parsing means that the suffix at the end was not generated
+		// by lumberjack, and therefore it's not a backup file.
+	}
+
+	sort.Sort(byFormatTime(logFilesByRollingDate))
+	return logFilesByRollingDate, nil
+}
+// cleanup deletes old log files rolling by date, keeping at most l.MaxBackupsRollingByDate files, as long as
+// none of them are older than MaxAge.
+func (l *Logger) cleanupRoolingByDate() error {
+
+	files, err := l.oldLogRollingDateFiles()
+	if err != nil {
+		return err
+	}
+	var deletes []logInfo
+	if l.MaxAge > 0 {
+		diff := time.Duration(int64(24*time.Hour) * int64(l.MaxBackupRollingByDate))
+
+		cutoff := currentTime().Add(-1 * diff)
+		for _, f := range files {
+			if f.timestamp.Before(cutoff) {
+				deletes = append(deletes, f)
+			}
+		}
+	}
+
+	if len(deletes) == 0 {
+		return nil
+	}
+	go deleteAll(l.dir(), deletes)
+
+	return nil
+}
+
 
 // cleanup deletes old log files, keeping at most l.MaxBackups files, as long as
 // none of them are older than MaxAge.

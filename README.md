@@ -37,6 +37,8 @@ log.SetOutput(&lumberjack.Logger{
     MaxSize:    500, // megabytes
     MaxBackups: 3,
     MaxAge:     28, //days
+    IsRollingByDate:     false,//is log rotate daily
+    MaxBackupRollingByDate:    4,//the maximum number of log rolling by date to retain
 })
 ```
 
@@ -65,6 +67,12 @@ type Logger struct {
     // is to retain all old log files (though MaxAge may still cause them to get
     // deleted.)
     MaxBackups int `json:"maxbackups" yaml:"maxbackups"`
+    //default is false
+    IsRollingByDate bool `json:"isRollingByDate" yaml:"isRollingByDate"`
+    
+    //default is 0 ,retain all old log files rolling by date. MaxBackupRollingByDate is the maximum number of old log files rolling by date
+    // to retain.
+    MaxBackupRollingByDate int `json:"MaxBackupRollingByDate" yaml:"MaxBackupRollingByDate"`
 
     // LocalTime determines if the time used for formatting the timestamps in
     // backup files is the computer's local time.  The default is to use UTC
@@ -98,11 +106,10 @@ time, which may differ from the last time that file was written to.
 If MaxBackups and MaxAge are both 0, no old log files will be deleted.
 
 
-
-
-
-
-
+### log rotate daily 
+if IsRollingByDate set true and MaxBackupRollingByDate > 0 , it will automatic rotation daily.
+MaxBackupRollingByDate is the number of logs  before  being  removed.So if  MaxBackupRollingByDate = 0,
+it wont rotation daily.the file name format of old log file rotated by date is "2006-01-02".
 
 
 
