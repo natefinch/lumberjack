@@ -211,13 +211,6 @@ func (l *Logger) openNew() error {
 			return fmt.Errorf("can't rename log file: %s", err)
 		}
 
-		// Compress the backup if enabled
-		if l.CompressBackups == true {
-			if err := compressLog(newname); err != nil {
-				return fmt.Errorf("Unable to compress backup log file: %s", err)
-			}
-		}
-
 		// this is a no-op anywhere but linux
 		if err := chown(name, info); err != nil {
 			return err
@@ -278,6 +271,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 	}
 	l.file = file
 	l.size = info.Size()
+
 	return nil
 }
 
@@ -293,11 +287,15 @@ func (l *Logger) filename() string {
 // cleanup deletes old log files, keeping at most l.MaxBackups files, as long as
 // none of them are older than MaxAge.
 func (l *Logger) cleanup() error {
+	if l.CompressBackups {
+		go l.compressLogs()
+	}
+
 	if l.MaxBackups == 0 && l.MaxAge == 0 {
 		return nil
 	}
 
-	files, err := l.oldLogFiles()
+	files, err := l.oldLogFiles(l.CompressBackups)
 	if err != nil {
 		return err
 	}
@@ -337,9 +335,28 @@ func deleteAll(dir string, files []logInfo) {
 	}
 }
 
+// compressLogs compresses any uncompressed logs during the cleanup process
+func (l *Logger) compressLogs() {
+	files, err := l.oldLogFiles(false)
+	if err != nil {
+		fmt.Errorf("Unable to compress log files: %s", err)
+	}
+
+	for _, file := range files {
+		_, ext := l.prefixAndExt()
+		if ext != compressFileExtension {
+			if err := compressLog(filepath.Join(l.dir(), file.Name())); err != nil {
+				fmt.Errorf("Unable to compress backup log file: %s", err)
+			}
+		}
+	}
+}
+
 // oldLogFiles returns the list of backup log files stored in the same
-// directory as the current log file, sorted by ModTime
-func (l *Logger) oldLogFiles() ([]logInfo, error) {
+// directory as the current log file, sorted by ModTime. Setting
+// includeCompressed to true will include files with the given
+// compressFileExtension into the returned list
+func (l *Logger) oldLogFiles(includeCompressed bool) ([]logInfo, error) {
 	files, err := ioutil.ReadDir(l.dir())
 	if err != nil {
 		return nil, fmt.Errorf("can't read log file directory: %s", err)
@@ -348,9 +365,7 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 
 	prefix, ext := l.prefixAndExt()
 
-	// If compression is enabled, add the extension to
-	// check files
-	if l.CompressBackups == true {
+	if includeCompressed {
 		ext = ext + compressFileExtension
 	}
 
@@ -375,39 +390,34 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 	return logFiles, nil
 }
 
-// compressLog compresses the log with given filename
-// using Gzip compression
+// compressLog compresses the log with given filename using Gzip compression
 func compressLog(filename string) error {
-	// Open reader for backup logfile
+
 	reader, err := os.Open(filename)
 	if err != nil {
 		return err
 	}
+	defer reader.Close()
 
-	// Open writer for compressed logfile
 	writer, err := os.Create(filename + compressFileExtension)
 	if err != nil {
 		return err
 	}
 	defer writer.Close()
 
-	// Wrap the writer in gzip
 	gzwriter := gzip.NewWriter(writer)
 	defer gzwriter.Close()
 
-	// Compress the file and ignore bytes copied
 	if _, err := io.Copy(gzwriter, reader); err != nil {
 		return err
 	}
 
-	// Close the reader before removing the uncompressed file
+	// Explicitly closing the reader in addition to defer reader.Close so that
+	// we don't get 'file is being used by another process' errors on Windows
 	reader.Close()
-
-	// Remove the uncompressed file
 	if err := os.Remove(filename); err != nil {
 		return err
 	}
-
 	return nil
 }
 

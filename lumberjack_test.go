@@ -166,11 +166,11 @@ func TestAutoRotate(t *testing.T) {
 	fileCount(dir, 2, t)
 }
 
-func TestAutoRotateCompressed(t *testing.T) {
+func TestCompressed(t *testing.T) {
 	currentTime = fakeTime
 	megabyte = 1
 
-	dir := makeTempDir("TestAutoRotateCompressed", t)
+	dir := makeTempDir("TestCompressed", t)
 	defer os.RemoveAll(dir)
 
 	filename := logFile(dir)
@@ -200,18 +200,17 @@ func TestAutoRotateCompressed(t *testing.T) {
 	// only the last write in it.
 	existsWithLen(filename, n, t)
 
+	l.compressLogs()
+
 	// the backup file will use the current fake time and have the old contents.
 	compressedFilename := backupFileCompressed(dir)
 	exists(compressedFilename, t)
 
 	// Verify that the compressed file contains the content
 	// that we compressed
-
-	// Open the compressed file
 	reader, err := os.Open(compressedFilename)
 	isNil(err, t)
 
-	// Wrap the reader with gzip
 	gzreader, err := gzip.NewReader(reader)
 	isNil(err, t)
 
@@ -527,7 +526,7 @@ func TestOldLogFiles(t *testing.T) {
 	isNil(err, t)
 
 	l := &Logger{Filename: filename}
-	files, err := l.oldLogFiles()
+	files, err := l.oldLogFiles(l.CompressBackups)
 	isNil(err, t)
 	equals(2, len(files), t)
 
