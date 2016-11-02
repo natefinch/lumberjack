@@ -101,6 +101,7 @@ type Logger struct {
 	size int64
 	file *os.File
 	mu   sync.Mutex
+	cmu  sync.Mutex
 }
 
 var (
@@ -134,6 +135,9 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	if l.file == nil {
 		if err = l.openExistingOrNew(len(p)); err != nil {
 			return 0, err
+		}
+		if l.CompressBackups {
+			go l.compressLogs()
 		}
 	}
 
@@ -337,6 +341,8 @@ func deleteAll(dir string, files []logInfo) {
 
 // compressLogs compresses any uncompressed logs during the cleanup process
 func (l *Logger) compressLogs() {
+	l.cmu.Lock()
+	defer l.cmu.Unlock()
 	files, err := l.oldLogFiles(false)
 	if err != nil {
 		fmt.Errorf("Unable to compress log files: %s", err)
