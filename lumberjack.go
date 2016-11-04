@@ -22,6 +22,7 @@
 package lumberjack
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -34,8 +35,9 @@ import (
 )
 
 const (
-	backupTimeFormat = "2006-01-02T15-04-05.000"
-	defaultMaxSize   = 100
+	backupTimeFormat      = "2006-01-02T15-04-05.000"
+	defaultMaxSize        = 100
+	compressFileExtension = ".gz"
 )
 
 // ensure we always implement io.WriteCloser
@@ -95,6 +97,10 @@ type Logger struct {
 	// deleted.)
 	MaxBackups int `json:"maxbackups" yaml:"maxbackups"`
 
+	// CompressBackups gzips the old log files specified by MaxAge and MaxBackups.
+	// The default is to leave backups uncompressed.
+	CompressBackups bool `json:"compressbackups" yaml:"compressbackups"`
+
 	// LocalTime determines if the time used for formatting the timestamps in
 	// backup files is the computer's local time.  The default is to use UTC
 	// time.
@@ -103,6 +109,7 @@ type Logger struct {
 	size int64
 	file *os.File
 	mu   sync.Mutex
+	cmu  sync.Mutex
 }
 
 var (
@@ -136,6 +143,9 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	if l.file == nil {
 		if err = l.openExistingOrNew(len(p)); err != nil {
 			return 0, err
+		}
+		if l.CompressBackups {
+			go l.compressLogs()
 		}
 	}
 
@@ -273,6 +283,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 	}
 	l.file = file
 	l.size = info.Size()
+
 	return nil
 }
 
@@ -288,11 +299,15 @@ func (l *Logger) filename() string {
 // cleanup deletes old log files, keeping at most l.MaxBackups files, as long as
 // none of them are older than MaxAge.
 func (l *Logger) cleanup() error {
+	if l.CompressBackups {
+		go l.compressLogs()
+	}
+
 	if l.MaxBackups == 0 && l.MaxAge == 0 {
 		return nil
 	}
 
-	files, err := l.oldLogFiles()
+	files, err := l.oldLogFiles(l.CompressBackups)
 	if err != nil {
 		return err
 	}
@@ -332,9 +347,30 @@ func deleteAll(dir string, files []logInfo) {
 	}
 }
 
+// compressLogs compresses any uncompressed logs during the cleanup process
+func (l *Logger) compressLogs() {
+	l.cmu.Lock()
+	defer l.cmu.Unlock()
+	files, err := l.oldLogFiles(false)
+	if err != nil {
+		fmt.Errorf("Unable to compress log files: %s", err)
+	}
+
+	for _, file := range files {
+		_, ext := l.prefixAndExt()
+		if ext != compressFileExtension {
+			if err := compressLog(filepath.Join(l.dir(), file.Name())); err != nil {
+				fmt.Errorf("Unable to compress backup log file: %s", err)
+			}
+		}
+	}
+}
+
 // oldLogFiles returns the list of backup log files stored in the same
-// directory as the current log file, sorted by ModTime
-func (l *Logger) oldLogFiles() ([]logInfo, error) {
+// directory as the current log file, sorted by ModTime. Setting
+// includeCompressed to true will include files with the given
+// compressFileExtension into the returned list
+func (l *Logger) oldLogFiles(includeCompressed bool) ([]logInfo, error) {
 	files, err := ioutil.ReadDir(l.dir())
 	if err != nil {
 		return nil, fmt.Errorf("can't read log file directory: %s", err)
@@ -342,6 +378,10 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 	logFiles := []logInfo{}
 
 	prefix, ext := l.prefixAndExt()
+
+	if includeCompressed {
+		ext = ext + compressFileExtension
+	}
 
 	for _, f := range files {
 		if f.IsDir() {
@@ -362,6 +402,37 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 	sort.Sort(byFormatTime(logFiles))
 
 	return logFiles, nil
+}
+
+// compressLog compresses the log with given filename using Gzip compression
+func compressLog(filename string) error {
+
+	reader, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	writer, err := os.Create(filename + compressFileExtension)
+	if err != nil {
+		return err
+	}
+	defer writer.Close()
+
+	gzwriter := gzip.NewWriter(writer)
+	defer gzwriter.Close()
+
+	if _, err := io.Copy(gzwriter, reader); err != nil {
+		return err
+	}
+
+	// Explicitly closing the reader in addition to defer reader.Close so that
+	// we don't get 'file is being used by another process' errors on Windows
+	reader.Close()
+	if err := os.Remove(filename); err != nil {
+		return err
+	}
+	return nil
 }
 
 // timeFromName extracts the formatted time from the filename by stripping off

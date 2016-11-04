@@ -66,6 +66,10 @@ type Logger struct {
     // deleted.)
     MaxBackups int `json:"maxbackups" yaml:"maxbackups"`
 
+    // CompressBackups gzips the old log files specified by MaxAge and MaxBackups.
+    // The default is to not compress backups
+    CompressBackups bool `json:"compressbackups" yaml:"compressbackups"`
+
     // LocalTime determines if the time used for formatting the timestamps in
     // backup files is the computer's local time.  The default is to use UTC
     // time.
