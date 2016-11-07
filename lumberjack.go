@@ -34,9 +34,11 @@ import (
 )
 
 const (
-	backupTimeFormat = "2006-01-02T15-04-05.000"
-	defaultMaxSize   = 100
+	defaultMaxSize = 100
 )
+
+// BackupTimeformat time format for filename
+var BackupTimeFormat = "2006-01-02T15-04-05.000"
 
 // ensure we always implement io.WriteCloser
 var _ io.WriteCloser = (*Logger)(nil)
@@ -244,7 +246,7 @@ func backupName(name string, local bool) string {
 		t = t.UTC()
 	}
 
-	timestamp := t.Format(backupTimeFormat)
+	timestamp := t.Format(BackupTimeFormat)
 	return filepath.Join(dir, fmt.Sprintf("%s-%s%s", prefix, timestamp, ext))
 }
 
@@ -351,7 +353,7 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 		if name == "" {
 			continue
 		}
-		t, err := time.Parse(backupTimeFormat, name)
+		t, err := time.Parse(BackupTimeFormat, name)
 		if err == nil {
 			logFiles = append(logFiles, logInfo{t, f})
 		}
