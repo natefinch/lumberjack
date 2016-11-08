@@ -468,8 +468,8 @@ func TestOldLogFiles(t *testing.T) {
 	equals(2, len(files), t)
 
 	// should be sorted by newest file first, which would be t2
-	equals(t2, files[0].timestamp, t)
-	equals(t1, files[1].timestamp, t)
+	equals(t2, files[0].Timestamp, t)
+	equals(t1, files[1].Timestamp, t)
 }
 
 func TestTimeFromName(t *testing.T) {

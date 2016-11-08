@@ -193,10 +193,20 @@ func (l *Logger) rotate() error {
 	return l.cleanup()
 }
 
+// Backups returns a list of the backed up log files stored in the system in
+// chronological order
+func (l *Logger) Backups() ([]LogInfo, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	logInfos, err := l.oldLogFiles()
+	sort.Sort(sort.Reverse(byFormatTime(logInfos)))
+	return logInfos, err
+}
+
 // openNew opens a new log file for writing, moving any old log file out of the
 // way.  This methods assumes the file has already been closed.
 func (l *Logger) openNew() error {
-	err := os.MkdirAll(l.dir(), 0744)
+	err := os.MkdirAll(l.Dir(), 0744)
 	if err != nil {
 		return fmt.Errorf("can't make directories for new logfile: %s", err)
 	}
@@ -297,7 +307,7 @@ func (l *Logger) cleanup() error {
 		return err
 	}
 
-	var deletes []logInfo
+	var deletes []LogInfo
 
 	if l.MaxBackups > 0 && l.MaxBackups < len(files) {
 		deletes = files[l.MaxBackups:]
@@ -309,7 +319,7 @@ func (l *Logger) cleanup() error {
 		cutoff := currentTime().Add(-1 * diff)
 
 		for _, f := range files {
-			if f.timestamp.Before(cutoff) {
+			if f.Timestamp.Before(cutoff) {
 				deletes = append(deletes, f)
 			}
 		}
@@ -319,12 +329,12 @@ func (l *Logger) cleanup() error {
 		return nil
 	}
 
-	go deleteAll(l.dir(), deletes)
+	go deleteAll(l.Dir(), deletes)
 
 	return nil
 }
 
-func deleteAll(dir string, files []logInfo) {
+func deleteAll(dir string, files []LogInfo) {
 	// remove files on a separate goroutine
 	for _, f := range files {
 		// what am I going to do, log this?
@@ -334,12 +344,12 @@ func deleteAll(dir string, files []logInfo) {
 
 // oldLogFiles returns the list of backup log files stored in the same
 // directory as the current log file, sorted by ModTime
-func (l *Logger) oldLogFiles() ([]logInfo, error) {
-	files, err := ioutil.ReadDir(l.dir())
+func (l *Logger) oldLogFiles() ([]LogInfo, error) {
+	files, err := ioutil.ReadDir(l.Dir())
 	if err != nil {
 		return nil, fmt.Errorf("can't read log file directory: %s", err)
 	}
-	logFiles := []logInfo{}
+	logFiles := []LogInfo{}
 
 	prefix, ext := l.prefixAndExt()
 
@@ -353,7 +363,7 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 		}
 		t, err := time.Parse(backupTimeFormat, name)
 		if err == nil {
-			logFiles = append(logFiles, logInfo{t, f})
+			logFiles = append(logFiles, LogInfo{t, f})
 		}
 		// error parsing means that the suffix at the end was not generated
 		// by lumberjack, and therefore it's not a backup file.
@@ -389,7 +399,7 @@ func (l *Logger) max() int64 {
 }
 
 // dir returns the directory for the current filename.
-func (l *Logger) dir() string {
+func (l *Logger) Dir() string {
 	return filepath.Dir(l.filename())
 }
 
@@ -402,18 +412,17 @@ func (l *Logger) prefixAndExt() (prefix, ext string) {
 	return prefix, ext
 }
 
-// logInfo is a convenience struct to return the filename and its embedded
-// timestamp.
-type logInfo struct {
-	timestamp time.Time
+// LogInfo holds a log file's timestamp and os.FileInfo
+type LogInfo struct {
+	Timestamp time.Time
 	os.FileInfo
 }
 
 // byFormatTime sorts by newest time formatted in the name.
-type byFormatTime []logInfo
+type byFormatTime []LogInfo
 
 func (b byFormatTime) Less(i, j int) bool {
-	return b[i].timestamp.After(b[j].timestamp)
+	return b[i].Timestamp.After(b[j].Timestamp)
 }
 
 func (b byFormatTime) Swap(i, j int) {
