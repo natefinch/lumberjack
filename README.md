@@ -37,6 +37,7 @@ log.SetOutput(&lumberjack.Logger{
     MaxSize:    500, // megabytes
     MaxBackups: 3,
     MaxAge:     28, //days
+    FilePermission: 0774, // -rwxrwxr--
 })
 ```
 
