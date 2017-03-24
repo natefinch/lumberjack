@@ -79,6 +79,11 @@ type Logger struct {
 	// os.TempDir() if empty.
 	Filename string `json:"filename" yaml:"filename"`
 
+	// ArchiveDir is the directory where to write the rotated logs to.
+	// If not set it will default to the current directory of the logfile.
+	// Lumberjack will assume the archive directory already exists.
+	ArchiveDir string `json:"archivedir" yaml:"archivedir"`
+
 	// MaxSize is the maximum size in megabytes of the log file before it gets
 	// rotated. It defaults to 100 megabytes.
 	MaxSize int `json:"maxsize" yaml:"maxsize"`
@@ -208,7 +213,7 @@ func (l *Logger) openNew() error {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
-		newname := backupName(name, l.LocalTime)
+		newname := backupName(name, l.ArchiveDir, l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
 			return fmt.Errorf("can't rename log file: %s", err)
 		}
@@ -234,8 +239,11 @@ func (l *Logger) openNew() error {
 // backupName creates a new filename from the given name, inserting a timestamp
 // between the filename and the extension, using the local time if requested
 // (otherwise UTC).
-func backupName(name string, local bool) string {
+func backupName(name, archiveDir string, local bool) string {
 	dir := filepath.Dir(name)
+	if len(archiveDir) > 0 {
+		dir = archiveDir
+	}
 	filename := filepath.Base(name)
 	ext := filepath.Ext(filename)
 	prefix := filename[:len(filename)-len(ext)]
@@ -389,7 +397,12 @@ func (l *Logger) max() int64 {
 }
 
 // dir returns the directory for the current filename.
+// if ArchiveDir is set it will return the archive directory
+// so the old log files will be located at the correct location
 func (l *Logger) dir() string {
+	if len(l.ArchiveDir) > 0 {
+		return l.ArchiveDir
+	}
 	return filepath.Dir(l.filename())
 }
 

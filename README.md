@@ -50,6 +50,11 @@ type Logger struct {
     // os.TempDir() if empty.
     Filename string `json:"filename" yaml:"filename"`
 
+    // ArchiveDir is the directory where to write the rotated logs to.
+    // If not set it will default to the current directory of the logfile.
+    // Lumberjack will assume the archive directory already exists.
+    ArchiveDir string `json:"archivedir" yaml:"archivedir"`
+
     // MaxSize is the maximum size in megabytes of the log file before it gets
     // rotated. It defaults to 100 megabytes.
     MaxSize int `json:"maxsize" yaml:"maxsize"`
@@ -94,6 +99,9 @@ the log was rotated formatted with the time.Time format of
 example, if your Logger.Filename is `/var/log/foo/server.log`, a backup created
 at 6:30pm on Nov 11 2016 would use the filename
 `/var/log/foo/server-2016-11-04T18-30-00.000.log`
+
+If ArchiveDir is set it will backup the old logfiles to this directory.
+This directory is assumed to already exists.
 
 ### Cleaning Up Old Log Files
 Whenever a new logfile gets created, old log files may be deleted.  The most
