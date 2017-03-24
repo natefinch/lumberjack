@@ -82,7 +82,7 @@ type Logger struct {
 	// ArchiveDir is the directory where to write the rotated logs to.
 	// If not set it will default to the current directory of the logfile.
 	// Lumberjack will assume the archive directory already exists.
-	ArchiveDir string `json:"archivedir" yaml:"archivedir"`
+	ArchiveDir string `json:"archivedir,omitempty" yaml:"archivedir,omitempty"`
 
 	// MaxSize is the maximum size in megabytes of the log file before it gets
 	// rotated. It defaults to 100 megabytes.
