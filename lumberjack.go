@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	backupTimeFormat = "2006-01-02T15-04-05.000"
-	defaultMaxSize   = 100
+	defaultbackupTimeFormat = "2006-01-02T15-04-05.000"
+	defaultMaxSize          = 100
 )
 
 // ensure we always implement io.WriteCloser
@@ -99,6 +99,10 @@ type Logger struct {
 	// backup files is the computer's local time.  The default is to use UTC
 	// time.
 	LocalTime bool `json:"localtime" yaml:"localtime"`
+
+	// BackupTimeFormat determines how to format the timestamp
+	// The default is to use defaultbackupTimeFormat
+	BackupTimeFormat string `json:"backuptimeformat" yaml:"backuptimeformat"`
 
 	size int64
 	file *os.File
@@ -208,7 +212,7 @@ func (l *Logger) openNew() error {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
-		newname := backupName(name, l.LocalTime)
+		newname := l.backupName(name, l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
 			return fmt.Errorf("can't rename log file: %s", err)
 		}
@@ -234,7 +238,7 @@ func (l *Logger) openNew() error {
 // backupName creates a new filename from the given name, inserting a timestamp
 // between the filename and the extension, using the local time if requested
 // (otherwise UTC).
-func backupName(name string, local bool) string {
+func (l *Logger) backupName(name string, local bool) string {
 	dir := filepath.Dir(name)
 	filename := filepath.Base(name)
 	ext := filepath.Ext(filename)
@@ -243,8 +247,10 @@ func backupName(name string, local bool) string {
 	if !local {
 		t = t.UTC()
 	}
-
-	timestamp := t.Format(backupTimeFormat)
+	if l.BackupTimeFormat == "" {
+		l.BackupTimeFormat = defaultbackupTimeFormat
+	}
+	timestamp := t.Format(l.BackupTimeFormat)
 	return filepath.Join(dir, fmt.Sprintf("%s-%s%s", prefix, timestamp, ext))
 }
 
@@ -351,7 +357,11 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 		if name == "" {
 			continue
 		}
-		t, err := time.Parse(backupTimeFormat, name)
+
+		if l.BackupTimeFormat == "" {
+			l.BackupTimeFormat = defaultbackupTimeFormat
+		}
+		t, err := time.Parse(l.BackupTimeFormat, name)
 		if err == nil {
 			logFiles = append(logFiles, logInfo{t, f})
 		}
