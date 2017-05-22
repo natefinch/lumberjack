@@ -1,6 +1,8 @@
 package lumberjack
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -277,15 +279,24 @@ func TestMaxBackups(t *testing.T) {
 
 	newFakeTime()
 
+	// this will use the new fake time
+	fourthFilename := backupFile(dir)
+
+	// Create a log file that is/was being compressed - this should
+	// not be counted since both the compressed and the uncompressed
+	// log files still exist.
+	compLogFile := fourthFilename+compressSuffix
+	err = ioutil.WriteFile(compLogFile, []byte("compress"), 0644)
+	isNil(err, t)
+
 	// this will make us rotate again
 	b4 := []byte("baaaaaaz!")
 	n, err = l.Write(b4)
 	isNil(err, t)
 	equals(len(b4), n, t)
 
-	// this will use the new fake time
-	fourthFilename := backupFile(dir)
 	existsWithContent(fourthFilename, b3, t)
+	existsWithContent(fourthFilename+compressSuffix, []byte("compress"), t)
 
 	// we need to wait a little bit since the files get deleted on a different
 	// goroutine.
@@ -293,7 +304,7 @@ func TestMaxBackups(t *testing.T) {
 
 	// We should have four things in the directory now - the 2 log files, the
 	// not log file, and the directory
-	fileCount(dir, 4, t)
+	fileCount(dir, 5, t)
 
 	// third file name should still exist
 	existsWithContent(filename, b4, t)
@@ -330,7 +341,7 @@ func TestCleanupExistingBackups(t *testing.T) {
 	newFakeTime()
 
 	backup = backupFile(dir)
-	err = ioutil.WriteFile(backup, data, 0644)
+	err = ioutil.WriteFile(backup+compressSuffix, data, 0644)
 	isNil(err, t)
 
 	newFakeTime()
@@ -431,7 +442,6 @@ func TestMaxAge(t *testing.T) {
 
 	// we should have deleted the old file due to being too old
 	existsWithContent(backupFile(dir), b2, t)
-
 }
 
 func TestOldLogFiles(t *testing.T) {
@@ -580,6 +590,104 @@ func TestRotate(t *testing.T) {
 	existsWithContent(filename, b2, t)
 }
 
+func TestCompressOnRotate(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+
+	dir := makeTempDir("TestCompressOnRotate", t)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	l := &Logger{
+		Compress: true,
+		Filename: filename,
+		MaxSize:  10,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	existsWithContent(filename, b, t)
+	fileCount(dir, 1, t)
+
+	newFakeTime()
+
+	err = l.Rotate()
+	isNil(err, t)
+
+	// the old logfile should be moved aside and the main logfile should have
+	// nothing in it.
+	existsWithContent(filename, []byte{}, t)
+
+	// we need to wait a little bit since the files get compressed on a different
+	// goroutine.
+	<-time.After(10 * time.Millisecond)
+
+	// a compressed version of the log file should now exist and the original
+	// should have been removed.
+	bc := new(bytes.Buffer)
+	gz := gzip.NewWriter(bc)
+	_, err = gz.Write(b)
+	isNil(err, t)
+	err = gz.Close()
+	isNil(err, t)
+	existsWithContent(backupFile(dir)+compressSuffix, bc.Bytes(), t)
+	notExist(backupFile(dir), t)
+
+	fileCount(dir, 2, t)
+}
+
+func TestCompressOnResume(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+
+	dir := makeTempDir("TestCompressOnResume", t)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	l := &Logger{
+		Compress: true,
+		Filename: filename,
+		MaxSize:  10,
+	}
+	defer l.Close()
+
+	// Create a backup file and empty "compressed" file.
+	filename2 := backupFile(dir)
+	b := []byte("foo!")
+	err := ioutil.WriteFile(filename2, b, 0644)
+	isNil(err, t)
+	err = ioutil.WriteFile(filename2+compressSuffix, []byte{}, 0644)
+	isNil(err, t)
+
+	newFakeTime()
+
+	b2 := []byte("boo!")
+	n, err := l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+	existsWithContent(filename, b2, t)
+
+	// we need to wait a little bit since the files get compressed on a different
+	// goroutine.
+	<-time.After(10 * time.Millisecond)
+
+	// The write should have started the compression - a compressed version of
+	// the log file should now exist and the original should have been removed.
+	bc := new(bytes.Buffer)
+	gz := gzip.NewWriter(bc)
+	_, err = gz.Write(b)
+	isNil(err, t)
+	err = gz.Close()
+	isNil(err, t)
+	existsWithContent(filename2+compressSuffix, bc.Bytes(), t)
+	notExist(filename2, t)
+
+	fileCount(dir, 2, t)
+}
+
 func TestJson(t *testing.T) {
 	data := []byte(`
 {
@@ -587,7 +695,8 @@ func TestJson(t *testing.T) {
 	"maxsize": 5,
 	"maxage": 10,
 	"maxbackups": 3,
-	"localtime": true
+	"localtime": true,
+	"compress": true
 }`[1:])
 
 	l := Logger{}
@@ -598,6 +707,7 @@ func TestJson(t *testing.T) {
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
+	equals(true, l.Compress, t)
 }
 
 func TestYaml(t *testing.T) {
@@ -606,7 +716,8 @@ filename: foo
 maxsize: 5
 maxage: 10
 maxbackups: 3
-localtime: true`[1:])
+localtime: true
+compress: true`[1:])
 
 	l := Logger{}
 	err := yaml.Unmarshal(data, &l)
@@ -616,6 +727,7 @@ localtime: true`[1:])
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
+	equals(true, l.Compress, t)
 }
 
 func TestToml(t *testing.T) {
@@ -624,7 +736,8 @@ filename = "foo"
 maxsize = 5
 maxage = 10
 maxbackups = 3
-localtime = true`[1:]
+localtime = true
+compress = true`[1:]
 
 	l := Logger{}
 	md, err := toml.Decode(data, &l)
@@ -634,6 +747,7 @@ localtime = true`[1:]
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
+	equals(true, l.Compress, t)
 	equals(0, len(md.Undecoded()), t)
 }
 
