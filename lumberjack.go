@@ -22,6 +22,7 @@
 package lumberjack
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -347,12 +348,7 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 		if f.IsDir() {
 			continue
 		}
-		name := l.timeFromName(f.Name(), prefix, ext)
-		if name == "" {
-			continue
-		}
-		t, err := time.Parse(backupTimeFormat, name)
-		if err == nil {
+		if t, err := l.timeFromName(f.Name(), prefix, ext); err == nil {
 			logFiles = append(logFiles, logInfo{t, f})
 		}
 		// error parsing means that the suffix at the end was not generated
@@ -367,17 +363,15 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 // timeFromName extracts the formatted time from the filename by stripping off
 // the filename's prefix and extension. This prevents someone's filename from
 // confusing time.parse.
-func (l *Logger) timeFromName(filename, prefix, ext string) string {
+func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 	if !strings.HasPrefix(filename, prefix) {
-		return ""
+		return time.Time{}, errors.New("mismatched prefix")
 	}
-	filename = filename[len(prefix):]
-
 	if !strings.HasSuffix(filename, ext) {
-		return ""
+		return time.Time{}, errors.New("mismatched extension")
 	}
-	filename = filename[:len(filename)-len(ext)]
-	return filename
+	ts := filename[len(prefix) : len(filename)-len(ext)]
+	return time.Parse(backupTimeFormat, ts)
 }
 
 // max returns the maximum size in bytes of log files before rolling.
