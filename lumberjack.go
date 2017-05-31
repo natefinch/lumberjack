@@ -472,9 +472,18 @@ func compressLogFile(src, dst string) (err error) {
 	}
 	defer f.Close()
 
+	fi, err := os_Stat(src)
+	if err != nil {
+		return fmt.Errorf("failed to stat log file: %v", err)
+	}
+
+	if err := chown(dst, fi); err != nil {
+		return fmt.Errorf("failed to chown compressed log file: %v", err)
+	}
+
 	// If this file already exists, we presume it was created by
 	// a previous attempt to compress the log file.
-	gzf, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	gzf, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, fi.Mode())
 	if err != nil {
 		return fmt.Errorf("failed to open compressed log file: %v", err)
 	}
