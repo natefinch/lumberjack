@@ -46,9 +46,9 @@ func TestMaintainMode(t *testing.T) {
 }
 
 func TestMaintainOwner(t *testing.T) {
-	fakeC := fakeChown{}
-	os_Chown = fakeC.Set
-	os_Stat = fakeStat
+	fakeFS := newFakeFS()
+	os_Chown = fakeFS.Chown
+	os_Stat = fakeFS.Stat
 	defer func() {
 		os_Chown = os.Chown
 		os_Stat = os.Stat
@@ -58,6 +58,10 @@ func TestMaintainOwner(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	filename := logFile(dir)
+
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0644)
+	isNil(err, t)
+	f.Close()
 
 	l := &Logger{
 		Filename:   filename,
@@ -75,27 +79,32 @@ func TestMaintainOwner(t *testing.T) {
 	err = l.Rotate()
 	isNil(err, t)
 
-	equals(555, fakeC.uid, t)
-	equals(666, fakeC.gid, t)
+	equals(555, fakeFS.files[filename].uid, t)
+	equals(666, fakeFS.files[filename].gid, t)
 }
 
-type fakeChown struct {
-	name string
-	uid  int
-	gid  int
+type fakeFile struct {
+	uid int
+	gid int
 }
 
-func (f *fakeChown) Set(name string, uid, gid int) error {
-	f.name = name
-	f.uid = uid
-	f.gid = gid
+type fakeFS struct {
+	files map[string]fakeFile
+}
+
+func newFakeFS() *fakeFS {
+	return &fakeFS{files: make(map[string]fakeFile)}
+}
+
+func (fs *fakeFS) Chown(name string, uid, gid int) error {
+	fs.files[name] = fakeFile{uid: uid, gid: gid}
 	return nil
 }
 
-func fakeStat(name string) (os.FileInfo, error) {
+func (fs *fakeFS) Stat(name string) (os.FileInfo, error) {
 	info, err := os.Stat(name)
 	if err != nil {
-		return info, err
+		return nil, err
 	}
 	stat := info.Sys().(*syscall.Stat_t)
 	stat.Uid = 555
