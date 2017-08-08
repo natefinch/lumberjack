@@ -178,6 +178,20 @@ func (l *Logger) close() error {
 	return err
 }
 
+// Sync calls the file's Sync method to flush the logfile.
+func (l *Logger) Sync() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.sync()
+}
+
+func (l *Logger) sync() error {
+	if l.file == nil {
+		return nil
+	}
+	return l.file.Sync()
+}
+
 // Rotate causes Logger to close the existing log file and immediately create a
 // new one.  This is a helper function for applications that want to initiate
 // rotations outside of the normal rotation rules, such as in response to
