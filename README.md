@@ -37,6 +37,7 @@ log.SetOutput(&lumberjack.Logger{
     MaxSize:    500, // megabytes
     MaxBackups: 3,
     MaxAge:     28, //days
+    Compress:   true, // disabled by default
 })
 ```
 
@@ -70,6 +71,10 @@ type Logger struct {
     // backup files is the computer's local time.  The default is to use UTC
     // time.
     LocalTime bool `json:"localtime" yaml:"localtime"`
+
+    // Compress determines if the rotated log files should be compressed
+    // using gzip. The default is not to perform compression.
+    Compress bool `json:"compress" yaml:"compress"`
     // contains filtered or unexported fields
 }
 ```
