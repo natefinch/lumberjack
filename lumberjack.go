@@ -107,6 +107,9 @@ type Logger struct {
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
 
+	// File header to be written for each new log file created
+	FileHeader string `json:"fileheader" yaml:"fileheader"`
+
 	size int64
 	file *os.File
 	mu   sync.Mutex
@@ -238,6 +241,15 @@ func (l *Logger) openNew() error {
 	}
 	l.file = f
 	l.size = 0
+
+	if l.FileHeader != "" {
+		n, err := l.file.WriteString(l.FileHeader)
+		if err != nil {
+			return fmt.Errorf("can't write file header to file: %s", err)
+		}
+		l.size += int64(n)
+	}
+
 	return nil
 }
 
