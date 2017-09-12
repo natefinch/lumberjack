@@ -98,7 +98,7 @@ func TestCompressMaintainMode(t *testing.T) {
 	f.Close()
 
 	l := &Logger{
-		Compress: true,
+		Compress:   true,
 		Filename:   filename,
 		MaxBackups: 1,
 		MaxSize:    100, // megabytes
@@ -123,7 +123,7 @@ func TestCompressMaintainMode(t *testing.T) {
 	filename2 := backupFile(dir)
 	info, err := os.Stat(filename)
 	isNil(err, t)
-	info2, err := os.Stat(filename2+compressSuffix)
+	info2, err := os.Stat(filename2 + compressSuffix)
 	isNil(err, t)
 	equals(mode, info.Mode(), t)
 	equals(mode, info2.Mode(), t)

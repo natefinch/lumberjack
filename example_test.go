@@ -13,7 +13,7 @@ func Example() {
 		Filename:   "/var/log/myapp/foo.log",
 		MaxSize:    500, // megabytes
 		MaxBackups: 3,
-		MaxAge:     28, // days
+		MaxAge:     28,   // days
 		Compress:   true, // disabled by default
 	})
 }

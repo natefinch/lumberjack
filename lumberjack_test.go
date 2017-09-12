@@ -285,7 +285,7 @@ func TestMaxBackups(t *testing.T) {
 	// Create a log file that is/was being compressed - this should
 	// not be counted since both the compressed and the uncompressed
 	// log files still exist.
-	compLogFile := fourthFilename+compressSuffix
+	compLogFile := fourthFilename + compressSuffix
 	err = ioutil.WriteFile(compLogFile, []byte("compress"), 0644)
 	isNil(err, t)
 
