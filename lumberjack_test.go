@@ -623,7 +623,7 @@ func TestCompressOnRotate(t *testing.T) {
 
 	// we need to wait a little bit since the files get compressed on a different
 	// goroutine.
-	<-time.After(10 * time.Millisecond)
+	<-time.After(20 * time.Millisecond)
 
 	// a compressed version of the log file should now exist and the original
 	// should have been removed.
@@ -672,7 +672,7 @@ func TestCompressOnResume(t *testing.T) {
 
 	// we need to wait a little bit since the files get compressed on a different
 	// goroutine.
-	<-time.After(10 * time.Millisecond)
+	<-time.After(20 * time.Millisecond)
 
 	// The write should have started the compression - a compressed version of
 	// the log file should now exist and the original should have been removed.
