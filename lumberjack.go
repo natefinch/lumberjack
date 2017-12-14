@@ -33,6 +33,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"runtime"
 )
 
 const (
@@ -125,7 +126,9 @@ var (
 	// megabyte is the conversion factor between MaxSize and bytes.  It is a
 	// variable so tests can mock it out and not need to write megabytes of data
 	// to disk.
-	megabyte = 1024 * 1024
+	//megabyte = 1024 * 1024
+	//change to kilobyte
+	megabyte = 1024
 )
 
 // Write implements io.Writer.  If a write would cause the log file to be larger
@@ -153,6 +156,17 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 		if err := l.rotate(); err != nil {
 			return 0, err
 		}
+	}
+
+	//add newline function
+	var newLine []byte
+	if runtime.GOOS == "windows" {
+		newLine = []byte("\r\n")
+	}else{
+		newLine = []byte("\n")
+	}
+	for _,v := range newLine{
+		p = append(p,v)
 	}
 
 	n, err = l.file.Write(p)
