@@ -288,7 +288,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 	return nil
 }
 
-// genFilename generates the name of the logfile from the current time.
+// filename generates the name of the logfile from the current time.
 func (l *Logger) filename() string {
 	if l.Filename != "" {
 		return l.Filename
