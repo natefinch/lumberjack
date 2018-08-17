@@ -285,7 +285,7 @@ func TestMaxBackups(t *testing.T) {
 	// Create a log file that is/was being compressed - this should
 	// not be counted since both the compressed and the uncompressed
 	// log files still exist.
-	compLogFile := fourthFilename+compressSuffix
+	compLogFile := fourthFilename + compressSuffix
 	err = ioutil.WriteFile(compLogFile, []byte("compress"), 0644)
 	isNil(err, t)
 
@@ -623,7 +623,7 @@ func TestCompressOnRotate(t *testing.T) {
 
 	// we need to wait a little bit since the files get compressed on a different
 	// goroutine.
-	<-time.After(10 * time.Millisecond)
+	<-time.After(300 * time.Millisecond)
 
 	// a compressed version of the log file should now exist and the original
 	// should have been removed.
@@ -672,7 +672,7 @@ func TestCompressOnResume(t *testing.T) {
 
 	// we need to wait a little bit since the files get compressed on a different
 	// goroutine.
-	<-time.After(10 * time.Millisecond)
+	<-time.After(300 * time.Millisecond)
 
 	// The write should have started the compression - a compressed version of
 	// the log file should now exist and the original should have been removed.
