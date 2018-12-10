@@ -285,7 +285,7 @@ func TestMaxBackups(t *testing.T) {
 	// Create a log file that is/was being compressed - this should
 	// not be counted since both the compressed and the uncompressed
 	// log files still exist.
-	compLogFile := fourthFilename + compressSuffix
+	compLogFile := fourthFilename + CompressSuffix
 	err = ioutil.WriteFile(compLogFile, []byte("compress"), 0644)
 	isNil(err, t)
 
@@ -296,7 +296,7 @@ func TestMaxBackups(t *testing.T) {
 	equals(len(b4), n, t)
 
 	existsWithContent(fourthFilename, b3, t)
-	existsWithContent(fourthFilename+compressSuffix, []byte("compress"), t)
+	existsWithContent(fourthFilename+CompressSuffix, []byte("compress"), t)
 
 	// we need to wait a little bit since the files get deleted on a different
 	// goroutine.
@@ -341,7 +341,7 @@ func TestCleanupExistingBackups(t *testing.T) {
 	newFakeTime()
 
 	backup = backupFile(dir)
-	err = ioutil.WriteFile(backup+compressSuffix, data, 0644)
+	err = ioutil.WriteFile(backup+CompressSuffix, data, 0644)
 	isNil(err, t)
 
 	newFakeTime()
@@ -475,35 +475,13 @@ func TestOldLogFiles(t *testing.T) {
 	isNil(err, t)
 
 	l := &Logger{Filename: filename}
-	files, err := l.oldLogFiles()
+	files, err := l.oldLogFiles(l.filename(), l.dir())
 	isNil(err, t)
 	equals(2, len(files), t)
 
 	// should be sorted by newest file first, which would be t2
-	equals(t2, files[0].timestamp, t)
-	equals(t1, files[1].timestamp, t)
-}
-
-func TestTimeFromName(t *testing.T) {
-	l := &Logger{Filename: "/var/log/myfoo/foo.log"}
-	prefix, ext := l.prefixAndExt()
-
-	tests := []struct {
-		filename string
-		want     time.Time
-		wantErr  bool
-	}{
-		{"foo-2014-05-04T14-44-33.555.log", time.Date(2014, 5, 4, 14, 44, 33, 555000000, time.UTC), false},
-		{"foo-2014-05-04T14-44-33.555", time.Time{}, true},
-		{"2014-05-04T14-44-33.555.log", time.Time{}, true},
-		{"foo.log", time.Time{}, true},
-	}
-
-	for _, test := range tests {
-		got, err := l.timeFromName(test.filename, prefix, ext)
-		equals(got, test.want, t)
-		equals(err != nil, test.wantErr, t)
-	}
+	equals(t2, files[0].Timestamp, t)
+	equals(t1, files[1].Timestamp, t)
 }
 
 func TestLocalTime(t *testing.T) {
@@ -633,7 +611,7 @@ func TestCompressOnRotate(t *testing.T) {
 	isNil(err, t)
 	err = gz.Close()
 	isNil(err, t)
-	existsWithContent(backupFile(dir)+compressSuffix, bc.Bytes(), t)
+	existsWithContent(backupFile(dir)+CompressSuffix, bc.Bytes(), t)
 	notExist(backupFile(dir), t)
 
 	fileCount(dir, 2, t)
@@ -659,7 +637,7 @@ func TestCompressOnResume(t *testing.T) {
 	b := []byte("foo!")
 	err := ioutil.WriteFile(filename2, b, 0644)
 	isNil(err, t)
-	err = ioutil.WriteFile(filename2+compressSuffix, []byte{}, 0644)
+	err = ioutil.WriteFile(filename2+CompressSuffix, []byte{}, 0644)
 	isNil(err, t)
 
 	newFakeTime()
@@ -682,7 +660,7 @@ func TestCompressOnResume(t *testing.T) {
 	isNil(err, t)
 	err = gz.Close()
 	isNil(err, t)
-	existsWithContent(filename2+compressSuffix, bc.Bytes(), t)
+	existsWithContent(filename2+CompressSuffix, bc.Bytes(), t)
 	notExist(filename2, t)
 
 	fileCount(dir, 2, t)

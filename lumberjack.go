@@ -23,13 +23,10 @@ package lumberjack
 
 import (
 	"compress/gzip"
-	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -37,8 +34,8 @@ import (
 
 const (
 	backupTimeFormat = "2006-01-02T15-04-05.000"
-	compressSuffix   = ".gz"
 	defaultMaxSize   = 100
+	defaultPermMode  = 0744
 )
 
 // ensure we always implement io.WriteCloser
@@ -106,6 +103,12 @@ type Logger struct {
 	// Compress determines if the rotated log files should be compressed
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
+
+	// PermMode for your logs dir
+	DirPermMode os.FileMode
+
+	// Build backup file name with special func
+	RotateFilePattern RotateFilePattern `json:"-" yaml:"-"`
 
 	size int64
 	file *os.File
@@ -206,7 +209,11 @@ func (l *Logger) rotate() error {
 // openNew opens a new log file for writing, moving any old log file out of the
 // way.  This methods assumes the file has already been closed.
 func (l *Logger) openNew() error {
-	err := os.MkdirAll(l.dir(), 0744)
+	pm := l.DirPermMode
+	if pm == 0 {
+		pm = defaultPermMode
+	}
+	err := os.MkdirAll(l.dir(), pm)
 	if err != nil {
 		return fmt.Errorf("can't make directories for new logfile: %s", err)
 	}
@@ -218,7 +225,11 @@ func (l *Logger) openNew() error {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
-		newname := backupName(name, l.LocalTime)
+		rfp := l.RotateFilePattern
+		if rfp == nil {
+			rfp = DEFAULT_ROTATE_FILE_PATTERN
+		}
+		newname := rfp.BackupName(name, l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
 			return fmt.Errorf("can't rename log file: %s", err)
 		}
@@ -239,23 +250,6 @@ func (l *Logger) openNew() error {
 	l.file = f
 	l.size = 0
 	return nil
-}
-
-// backupName creates a new filename from the given name, inserting a timestamp
-// between the filename and the extension, using the local time if requested
-// (otherwise UTC).
-func backupName(name string, local bool) string {
-	dir := filepath.Dir(name)
-	filename := filepath.Base(name)
-	ext := filepath.Ext(filename)
-	prefix := filename[:len(filename)-len(ext)]
-	t := currentTime()
-	if !local {
-		t = t.UTC()
-	}
-
-	timestamp := t.Format(backupTimeFormat)
-	return filepath.Join(dir, fmt.Sprintf("%s-%s%s", prefix, timestamp, ext))
 }
 
 // openExistingOrNew opens the logfile if it exists and if the current write
@@ -306,22 +300,26 @@ func (l *Logger) millRunOnce() error {
 		return nil
 	}
 
-	files, err := l.oldLogFiles()
+	rfp := l.RotateFilePattern
+	if rfp == nil {
+		rfp = DEFAULT_ROTATE_FILE_PATTERN
+	}
+	files, err := rfp.OldLogFiles(l.filename(), l.dir())
 	if err != nil {
 		return err
 	}
 
-	var compress, remove []logInfo
+	var compress, remove []*LogInfo
 
 	if l.MaxBackups > 0 && l.MaxBackups < len(files) {
 		preserved := make(map[string]bool)
-		var remaining []logInfo
+		var remaining []*LogInfo
 		for _, f := range files {
 			// Only count the uncompressed log file or the
 			// compressed log file, not both.
 			fn := f.Name()
-			if strings.HasSuffix(fn, compressSuffix) {
-				fn = fn[:len(fn)-len(compressSuffix)]
+			if strings.HasSuffix(fn, CompressSuffix) {
+				fn = fn[:len(fn)-len(CompressSuffix)]
 			}
 			preserved[fn] = true
 
@@ -337,9 +335,9 @@ func (l *Logger) millRunOnce() error {
 		diff := time.Duration(int64(24*time.Hour) * int64(l.MaxAge))
 		cutoff := currentTime().Add(-1 * diff)
 
-		var remaining []logInfo
+		var remaining []*LogInfo
 		for _, f := range files {
-			if f.timestamp.Before(cutoff) {
+			if f.Timestamp.Before(cutoff) {
 				remove = append(remove, f)
 			} else {
 				remaining = append(remaining, f)
@@ -350,7 +348,7 @@ func (l *Logger) millRunOnce() error {
 
 	if l.Compress {
 		for _, f := range files {
-			if !strings.HasSuffix(f.Name(), compressSuffix) {
+			if !strings.HasSuffix(f.Name(), CompressSuffix) {
 				compress = append(compress, f)
 			}
 		}
@@ -364,7 +362,7 @@ func (l *Logger) millRunOnce() error {
 	}
 	for _, f := range compress {
 		fn := filepath.Join(l.dir(), f.Name())
-		errCompress := compressLogFile(fn, fn+compressSuffix)
+		errCompress := compressLogFile(fn, fn+CompressSuffix)
 		if err == nil && errCompress != nil {
 			err = errCompress
 		}
@@ -395,52 +393,6 @@ func (l *Logger) mill() {
 	}
 }
 
-// oldLogFiles returns the list of backup log files stored in the same
-// directory as the current log file, sorted by ModTime
-func (l *Logger) oldLogFiles() ([]logInfo, error) {
-	files, err := ioutil.ReadDir(l.dir())
-	if err != nil {
-		return nil, fmt.Errorf("can't read log file directory: %s", err)
-	}
-	logFiles := []logInfo{}
-
-	prefix, ext := l.prefixAndExt()
-
-	for _, f := range files {
-		if f.IsDir() {
-			continue
-		}
-		if t, err := l.timeFromName(f.Name(), prefix, ext); err == nil {
-			logFiles = append(logFiles, logInfo{t, f})
-			continue
-		}
-		if t, err := l.timeFromName(f.Name(), prefix, ext+compressSuffix); err == nil {
-			logFiles = append(logFiles, logInfo{t, f})
-			continue
-		}
-		// error parsing means that the suffix at the end was not generated
-		// by lumberjack, and therefore it's not a backup file.
-	}
-
-	sort.Sort(byFormatTime(logFiles))
-
-	return logFiles, nil
-}
-
-// timeFromName extracts the formatted time from the filename by stripping off
-// the filename's prefix and extension. This prevents someone's filename from
-// confusing time.parse.
-func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
-	if !strings.HasPrefix(filename, prefix) {
-		return time.Time{}, errors.New("mismatched prefix")
-	}
-	if !strings.HasSuffix(filename, ext) {
-		return time.Time{}, errors.New("mismatched extension")
-	}
-	ts := filename[len(prefix) : len(filename)-len(ext)]
-	return time.Parse(backupTimeFormat, ts)
-}
-
 // max returns the maximum size in bytes of log files before rolling.
 func (l *Logger) max() int64 {
 	if l.MaxSize == 0 {
@@ -454,13 +406,11 @@ func (l *Logger) dir() string {
 	return filepath.Dir(l.filename())
 }
 
-// prefixAndExt returns the filename part and extension part from the Logger's
-// filename.
-func (l *Logger) prefixAndExt() (prefix, ext string) {
-	filename := filepath.Base(l.filename())
-	ext = filepath.Ext(filename)
-	prefix = filename[:len(filename)-len(ext)] + "-"
-	return prefix, ext
+func (l *Logger) oldLogFiles(name, dir string) ([]*LogInfo, error) {
+	if l.RotateFilePattern != nil {
+		return l.RotateFilePattern.OldLogFiles(name, dir)
+	}
+	return DEFAULT_ROTATE_FILE_PATTERN.OldLogFiles(name, dir)
 }
 
 // compressLogFile compresses the given log file, removing the
@@ -516,26 +466,4 @@ func compressLogFile(src, dst string) (err error) {
 	}
 
 	return nil
-}
-
-// logInfo is a convenience struct to return the filename and its embedded
-// timestamp.
-type logInfo struct {
-	timestamp time.Time
-	os.FileInfo
-}
-
-// byFormatTime sorts by newest time formatted in the name.
-type byFormatTime []logInfo
-
-func (b byFormatTime) Less(i, j int) bool {
-	return b[i].timestamp.After(b[j].timestamp)
-}
-
-func (b byFormatTime) Swap(i, j int) {
-	b[i], b[j] = b[j], b[i]
-}
-
-func (b byFormatTime) Len() int {
-	return len(b)
 }
