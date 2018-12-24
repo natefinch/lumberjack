@@ -123,7 +123,7 @@ func TestCompressMaintainMode(t *testing.T) {
 	filename2 := backupFile(dir)
 	info, err := os.Stat(filename)
 	isNil(err, t)
-	info2, err := os.Stat(filename2+compressSuffix)
+	info2, err := os.Stat(filename2+CompressSuffix)
 	isNil(err, t)
 	equals(mode, info.Mode(), t)
 	equals(mode, info2.Mode(), t)
@@ -171,8 +171,8 @@ func TestCompressMaintainOwner(t *testing.T) {
 	// a compressed version of the log file should now exist with the correct
 	// owner.
 	filename2 := backupFile(dir)
-	equals(555, fakeFS.files[filename2+compressSuffix].uid, t)
-	equals(666, fakeFS.files[filename2+compressSuffix].gid, t)
+	equals(555, fakeFS.files[filename2+CompressSuffix].uid, t)
+	equals(666, fakeFS.files[filename2+CompressSuffix].gid, t)
 }
 
 type fakeFile struct {
