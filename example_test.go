@@ -15,6 +15,6 @@ func Example() {
 		MaxBackups:  3,
 		MaxAge:      28,   // days
 		Compress:    true, // disabled by default
-		DirPermMode: 0755, // 0644 by default
+		//DirPermMode: 0755, // 0644 by default
 	})
 }
