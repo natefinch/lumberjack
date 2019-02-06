@@ -107,6 +107,12 @@ type Logger struct {
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
 
+	// Hooks:
+	// AfterCompressFunc calls just after log file is rotated and has been compressed
+	AfterCompressFunc func(filepath string)
+	// BeforeDeleteFunc is hook that calls before delete old log files and it can cancel deleting.
+	BeforeDeleteFunc func(filepath string) bool
+
 	size int64
 	file *os.File
 	mu   sync.Mutex
@@ -357,6 +363,12 @@ func (l *Logger) millRunOnce() error {
 	}
 
 	for _, f := range remove {
+		if l.BeforeDeleteFunc != nil {
+			if !l.BeforeDeleteFunc(filepath.Join(l.dir(), f.Name())) {
+				continue
+			}
+		}
+
 		errRemove := os.Remove(filepath.Join(l.dir(), f.Name()))
 		if err == nil && errRemove != nil {
 			err = errRemove
@@ -367,6 +379,9 @@ func (l *Logger) millRunOnce() error {
 		errCompress := compressLogFile(fn, fn+compressSuffix)
 		if err == nil && errCompress != nil {
 			err = errCompress
+		}
+		if errCompress == nil && l.AfterCompressFunc != nil {
+			l.AfterCompressFunc(fn+compressSuffix)
 		}
 	}
 
