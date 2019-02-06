@@ -109,8 +109,10 @@ type Logger struct {
 
 	// Hooks:
 	// AfterCompressFunc calls just after log file is rotated and has been compressed
+	// It runs with own goroutine, so it is not blocking
 	AfterCompressFunc func(filepath string)
 	// BeforeDeleteFunc is hook that calls before delete old log files and it can cancel deleting.
+	// Warning: it's blocking func so be carefull to run long-running tasks in this func
 	BeforeDeleteFunc func(filepath string) bool
 
 	size int64
@@ -381,7 +383,7 @@ func (l *Logger) millRunOnce() error {
 			err = errCompress
 		}
 		if errCompress == nil && l.AfterCompressFunc != nil {
-			l.AfterCompressFunc(fn+compressSuffix)
+			go l.AfterCompressFunc(fn+compressSuffix)
 		}
 	}
 
