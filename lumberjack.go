@@ -32,13 +32,15 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
 const (
-	backupTimeFormat = "2006-01-02T15-04-05.000"
-	compressSuffix   = ".gz"
-	defaultMaxSize   = 100
+	backupTimeFormat  = "2006-01-02T15-04-05.000"
+	compressSuffix    = ".gz"
+	defaultMaxSize    = 100
+	rotateDailyFormat = "2006-01-02"
 )
 
 // ensure we always implement io.WriteCloser
@@ -107,6 +109,10 @@ type Logger struct {
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
 
+	// RotateDaily determines if the log files should gets rotated daily
+	// The default is false
+	RotateDaily bool `json:"rotatedaily" yaml:"rotatedaily"`
+
 	size int64
 	file *os.File
 	mu   sync.Mutex
@@ -146,6 +152,20 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	if l.file == nil {
 		if err = l.openExistingOrNew(len(p)); err != nil {
 			return 0, err
+		}
+	}
+
+	if l.RotateDaily {
+		today := currentTime().Format(rotateDailyFormat)
+		fi, err := os_Stat(l.Filename)
+		if err == nil {
+			stat := fi.Sys().(*syscall.Stat_t)
+			fileDay := time.Unix(stat.Ctim.Sec, 0).Format(rotateDailyFormat)
+			if today > fileDay {
+				if err := l.rotate(); err != nil {
+					return 0, err
+				}
+			}
 		}
 	}
 
