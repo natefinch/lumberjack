@@ -119,6 +119,8 @@ type Logger struct {
 
 	millCh    chan bool
 	startMill sync.Once
+
+	today string
 }
 
 var (
@@ -156,12 +158,15 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	}
 
 	if l.RotateDaily {
-		today := currentTime().Format(rotateDailyFormat)
+		if l.today == "" {
+			l.today = currentTime().Format(rotateDailyFormat)
+		}
 		fi, err := os_Stat(l.Filename)
 		if err == nil {
 			stat := fi.Sys().(*syscall.Stat_t)
-			fileDay := time.Unix(stat.Ctim.Sec, 0).Format(rotateDailyFormat)
-			if today > fileDay {
+			fileDay := time.Unix(stat.Mtim.Sec, 0).Format(rotateDailyFormat)
+			if l.today < fileDay {
+				l.today = fileDay
 				if err := l.rotate(); err != nil {
 					return 0, err
 				}
