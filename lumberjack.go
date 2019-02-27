@@ -29,7 +29,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -41,7 +40,6 @@ const (
 	compressSuffix    = ".gz"
 	defaultMaxSize    = 100
 	rotateDailyFormat = "2006-01-02"
-	osType            = runtime.GOOS
 )
 
 // ensure we always implement io.WriteCloser
