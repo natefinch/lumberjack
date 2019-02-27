@@ -108,8 +108,8 @@ type Logger struct {
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
 
-	// RotateDaily determines if the log files should gets rotated daily
-	// Not support for Windows. The default is false
+	// RotateDaily determines if the log files should gets rotated daily.
+	// The default is false
 	RotateDaily bool `json:"rotatedaily" yaml:"rotatedaily"`
 
 	size int64
