@@ -165,8 +165,7 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 		if err == nil {
 			stat := fi.Sys().(*syscall.Stat_t)
 			fileDay := time.Unix(stat.Mtim.Sec, 0).Format(rotateDailyFormat)
-			if l.today != fileDay {
-				l.today = fileDay
+			if l.today > fileDay {
 				if err := l.rotate(); err != nil {
 					return 0, err
 				}
