@@ -29,6 +29,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -41,6 +42,7 @@ const (
 	compressSuffix    = ".gz"
 	defaultMaxSize    = 100
 	rotateDailyFormat = "2006-01-02"
+	osType            = runtime.GOOS
 )
 
 // ensure we always implement io.WriteCloser
@@ -110,7 +112,7 @@ type Logger struct {
 	Compress bool `json:"compress" yaml:"compress"`
 
 	// RotateDaily determines if the log files should gets rotated daily
-	// The default is false
+	// Not support for Windows. The default is false
 	RotateDaily bool `json:"rotatedaily" yaml:"rotatedaily"`
 
 	size int64
@@ -155,7 +157,7 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 		}
 	}
 
-	if l.RotateDaily {
+	if l.RotateDaily && osType != "windows" {
 		today := currentTime().Format(rotateDailyFormat)
 		fi, err := os_Stat(l.Filename)
 		if err == nil {
