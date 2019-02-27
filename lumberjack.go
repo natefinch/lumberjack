@@ -33,7 +33,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -157,12 +156,11 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 		}
 	}
 
-	if l.RotateDaily && osType != "windows" {
+	if l.RotateDaily {
 		today := currentTime().Format(rotateDailyFormat)
 		fi, err := os_Stat(l.Filename)
 		if err == nil {
-			stat := fi.Sys().(*syscall.Stat_t)
-			fileDay := time.Unix(stat.Mtim.Sec, 0).Format(rotateDailyFormat)
+			fileDay := fi.ModTime().Format(rotateDailyFormat)
 			if today > fileDay {
 				if err := l.rotate(); err != nil {
 					return 0, err
