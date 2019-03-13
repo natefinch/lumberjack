@@ -107,6 +107,9 @@ type Logger struct {
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
 
+	// LogCompletedChan is called when milling is completed.
+	LogCompletedChan chan bool
+
 	size int64
 	file *os.File
 	mu   sync.Mutex
@@ -367,6 +370,13 @@ func (l *Logger) millRunOnce() error {
 		errCompress := compressLogFile(fn, fn+compressSuffix)
 		if err == nil && errCompress != nil {
 			err = errCompress
+		}
+	}
+
+	if l.LogCompletedChan != nil {
+		select {
+		case l.LogCompletedChan <- true:
+		default:
 		}
 	}
 
