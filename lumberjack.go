@@ -131,6 +131,22 @@ var (
 	megabyte = 1024 * 1024
 )
 
+// GetCompressedLogFiles returns list of compressed log files
+func (l *Logger) GetCompressedLogFiles() ([]string, error) {
+	logs, err := l.oldLogFiles()
+	if err != nil {
+		return nil, err
+	}
+	results := []string{}
+	for _, f := range logs {
+		if !strings.HasSuffix(f.Name(), compressSuffix) {
+			fn := filepath.Join(l.dir(), f.Name())
+			results = append(results, fn)
+		}
+	}
+	return results, nil
+}
+
 // Write implements io.Writer.  If a write would cause the log file to be larger
 // than MaxSize, the file is closed, renamed to include a timestamp of the
 // current time, and a new log file is created using the original log file name.
