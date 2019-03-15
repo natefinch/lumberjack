@@ -131,16 +131,19 @@ var (
 	megabyte = 1024 * 1024
 )
 
-// GetCompressedLogFiles returns list of compressed log files
-func (l *Logger) GetCompressedLogFiles() ([]string, error) {
+// GetLogFiles returns list of compressed log files
+func (l *Logger) GetLogFiles(compressed bool) ([]string, error) {
 	logs, err := l.oldLogFiles()
 	if err != nil {
 		return nil, err
 	}
 	results := []string{}
 	for _, f := range logs {
-		if !strings.HasSuffix(f.Name(), compressSuffix) {
-			fn := filepath.Join(l.dir(), f.Name())
+		isCompressed := strings.HasSuffix(f.Name(), compressSuffix)
+		fn := filepath.Join(l.dir(), f.Name())
+		if compressed && isCompressed {
+			results = append(results, fn)
+		} else if !compressed && !isCompressed {
 			results = append(results, fn)
 		}
 	}
