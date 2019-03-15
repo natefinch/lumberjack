@@ -32,6 +32,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -111,8 +112,8 @@ type Logger struct {
 	file *os.File
 	mu   sync.Mutex
 
-	millCh    chan bool
-	startMill sync.Once
+	needsMill int32
+	millMu    sync.Mutex
 }
 
 var (
@@ -302,6 +303,20 @@ func (l *Logger) filename() string {
 // files are removed, keeping at most l.MaxBackups files, as long as
 // none of them are older than MaxAge.
 func (l *Logger) millRunOnce() error {
+
+	// ensure only one mill worker is working at once
+	l.millMu.Lock()
+	defer l.millMu.Unlock()
+
+	// decrement needsMill to 0 to allow any calls to mill() that
+	// occur while this call to millRunOnce() is running to queue
+	// another call to millRunOnce() that will handle any files that
+	// this call may have missed in a race. at most one additional
+	// goroutine will ever be queued because once the first one is
+	// queued, needsMill will be 1 until that queued goroutine is
+	// run and hits this line itself.
+	atomic.StoreInt32(&l.needsMill, 0)
+
 	if l.MaxBackups == 0 && l.MaxAge == 0 && !l.Compress {
 		return nil
 	}
@@ -373,25 +388,12 @@ func (l *Logger) millRunOnce() error {
 	return err
 }
 
-// millRun runs in a goroutine to manage post-rotation compression and removal
-// of old log files.
-func (l *Logger) millRun() {
-	for _ = range l.millCh {
-		// what am I going to do, log this?
-		_ = l.millRunOnce()
-	}
-}
-
 // mill performs post-rotation compression and removal of stale log files,
-// starting the mill goroutine if necessary.
+// starting a mill goroutine if necessary.
 func (l *Logger) mill() {
-	l.startMill.Do(func() {
-		l.millCh = make(chan bool, 1)
-		go l.millRun()
-	})
-	select {
-	case l.millCh <- true:
-	default:
+	// queue a call to millRunOnce() if one has not already been queued
+	if atomic.CompareAndSwapInt32(&l.needsMill, 0, 1) {
+		go l.millRunOnce()
 	}
 }
 
