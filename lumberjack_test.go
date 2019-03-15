@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"testing"
 	"time"
 
@@ -125,6 +126,30 @@ func TestDefaultFilename(t *testing.T) {
 	isNil(err, t)
 	equals(len(b), n, t)
 	existsWithContent(filename, b, t)
+}
+
+func TestGoRoutinesNotLeaked(t *testing.T) {
+	dir := makeTempDir("TestGoRoutinesNotLeaked", t)
+	defer os.RemoveAll(dir)
+
+	numGoRoutinesBefore := pprof.Lookup("goroutine").Count()
+	filename := logFile(dir)
+	for i := 0; i < 25; i++ {
+		func() {
+			l := &Logger{
+				Filename: filename,
+				MaxSize:  10,
+			}
+			defer l.Close()
+			b := []byte("boo!")
+			_, err := l.Write(b)
+			isNil(err, t)
+		}()
+	}
+	numGoRoutinesAfter := pprof.Lookup("goroutine").Count()
+
+	// all loggers have been closed, so number of goroutines should not have increased
+	equals(numGoRoutinesBefore, numGoRoutinesAfter, t)
 }
 
 func TestAutoRotate(t *testing.T) {
