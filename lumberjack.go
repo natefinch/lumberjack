@@ -212,7 +212,7 @@ func (l *Logger) openNew() error {
 	}
 
 	name := l.filename()
-	mode := os.FileMode(0644)
+	mode := os.FileMode(0600)
 	info, err := os_Stat(name)
 	if err == nil {
 		// Copy the mode off the old logfile.
