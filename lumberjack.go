@@ -301,8 +301,8 @@ func (l *Logger) filename() string {
 // Log files are compressed if enabled via configuration and old log
 // files are removed, keeping at most l.MaxBackups files, as long as
 // none of them are older than MaxAge.
-func (l *Logger) millRunOnce() error {
-	if l.MaxBackups == 0 && l.MaxAge == 0 && !l.Compress {
+func (l *Logger) millRunOnce(maxBackups int, maxAge int) error {
+	if maxBackups == 0 && maxAge == 0 && !l.Compress {
 		return nil
 	}
 
@@ -313,7 +313,7 @@ func (l *Logger) millRunOnce() error {
 
 	var compress, remove []logInfo
 
-	if l.MaxBackups > 0 && l.MaxBackups < len(files) {
+	if maxBackups > 0 && maxBackups < len(files) {
 		preserved := make(map[string]bool)
 		var remaining []logInfo
 		for _, f := range files {
@@ -325,7 +325,7 @@ func (l *Logger) millRunOnce() error {
 			}
 			preserved[fn] = true
 
-			if len(preserved) > l.MaxBackups {
+			if len(preserved) > maxBackups {
 				remove = append(remove, f)
 			} else {
 				remaining = append(remaining, f)
@@ -333,8 +333,8 @@ func (l *Logger) millRunOnce() error {
 		}
 		files = remaining
 	}
-	if l.MaxAge > 0 {
-		diff := time.Duration(int64(24*time.Hour) * int64(l.MaxAge))
+	if maxAge > 0 {
+		diff := time.Duration(int64(24*time.Hour) * int64(maxAge))
 		cutoff := currentTime().Add(-1 * diff)
 
 		var remaining []logInfo
@@ -375,10 +375,10 @@ func (l *Logger) millRunOnce() error {
 
 // millRun runs in a goroutine to manage post-rotation compression and removal
 // of old log files.
-func (l *Logger) millRun() {
+func (l *Logger) millRun(maxBackups int, maxAge int) {
 	for _ = range l.millCh {
 		// what am I going to do, log this?
-		_ = l.millRunOnce()
+		_ = l.millRunOnce(maxBackups, maxAge)
 	}
 }
 
@@ -387,7 +387,7 @@ func (l *Logger) millRun() {
 func (l *Logger) mill() {
 	l.startMill.Do(func() {
 		l.millCh = make(chan bool, 1)
-		go l.millRun()
+		go l.millRun(l.MaxBackups, l.MaxAge)
 	})
 	select {
 	case l.millCh <- true:
@@ -461,6 +461,30 @@ func (l *Logger) prefixAndExt() (prefix, ext string) {
 	ext = filepath.Ext(filename)
 	prefix = filename[:len(filename)-len(ext)] + "-"
 	return prefix, ext
+}
+
+// SetMaxSize sets the maximum size in bytes of log files before rolling.
+func (l *Logger) SetMaxSize(maxSize int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.MaxSize = maxSize
+}
+
+// SetMaxAge sets the maximum number of days to retain old log files.
+func (l *Logger) SetMaxAge(maxAge int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.MaxAge = maxAge
+}
+
+// SetMaxBackups sets the maximum number of old log files to retain.
+func (l *Logger) SetMaxBackups(maxBackups int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.MaxBackups = maxBackups
 }
 
 // compressLogFile compresses the given log file, removing the
