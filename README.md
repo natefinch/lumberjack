@@ -9,6 +9,10 @@ thusly:
 
     import "gopkg.in/natefinch/lumberjack.v2"
 
+Alternatively, the library may be used as a Go module:
+
+    import "github.com/natefinch/lumberjack/v2"
+
 The package name remains simply lumberjack, and the code resides at
 https://github.com/natefinch/lumberjack under the v2.0 branch.
 
