@@ -21,3 +21,8 @@ _testmain.go
 
 *.exe
 *.test
+
+### Editors
+
+# IntelliJ
+.idea
