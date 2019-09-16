@@ -36,9 +36,9 @@ import (
 )
 
 const (
-	backupTimeFormat = "2006-01-02T15-04-05.000"
-	compressSuffix   = ".gz"
-	defaultMaxSize   = 100
+	DefaultTimeFormat = "2006-01-02T15-04-05.000"
+	compressSuffix    = ".gz"
+	defaultMaxSize    = 100
 )
 
 // ensure we always implement io.WriteCloser
@@ -58,13 +58,16 @@ var _ io.WriteCloser = (*Logger)(nil)
 // original name. Thus, the filename you give Logger is always the "current" log
 // file.
 //
-// Backups use the log file name given to Logger, in the form
-// `name-timestamp.ext` where name is the filename without the extension,
-// timestamp is the time at which the log was rotated formatted with the
-// time.Time format of `2006-01-02T15-04-05.000` and the extension is the
-// original extension.  For example, if your Logger.Filename is
-// `/var/log/foo/server.log`, a backup created at 6:30pm on Nov 11 2016 would
-// use the filename `/var/log/foo/server-2016-11-04T18-30-00.000.log`
+// Backups use the log file name given to Logger, in the form `name-timestamp.ext`
+// where name is the filename without the extension, timestamp is the time at which
+// the log was rotated formatted with the default time.Time format of
+// `2006-01-02T15-04-05.000` and the extension is the original extension.  For
+// example, if your `Logger.Filename` is `/var/log/foo/server.log`, a backup created
+// at 6:30pm on Nov 11 2016 would use the filename
+// `/var/log/foo/server-2016-11-04T18-30-00.000.log`
+//
+// The backup files name and location can be customized using the Logger's BackupDir
+// and TimeFormat optional fields.
 //
 // Cleaning Up Old Log Files
 //
@@ -78,8 +81,8 @@ var _ io.WriteCloser = (*Logger)(nil)
 // If MaxBackups and MaxAge are both 0, no old log files will be deleted.
 type Logger struct {
 	// Filename is the file to write logs to.  Backup log files will be retained
-	// in the same directory.  It uses <processname>-lumberjack.log in
-	// os.TempDir() if empty.
+	// in the same directory, or where defined by `BackupDir`.
+	// It uses <processname>-lumberjack.log in os.TempDir() if empty.
 	Filename string `json:"filename" yaml:"filename"`
 
 	// MaxSize is the maximum size in megabytes of the log file before it gets
@@ -106,6 +109,15 @@ type Logger struct {
 	// Compress determines if the rotated log files should be compressed
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
+
+	// TimeFormat determines the format to use for formatting the timestamp in
+	// backup files. The default format is defined in `DefaultTimeFormat`.
+	TimeFormat string `json:"timeformat" yaml:"timeformat"`
+
+	// BackupDir is the directory where backup files shall be saved to. The
+	// default is empty string which is resolved to where the active log file
+	// is located.
+	BackupDir string `json:"backupdir" yaml:"backupdir"`
 
 	size int64
 	file *os.File
@@ -218,7 +230,11 @@ func (l *Logger) openNew() error {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
-		newname := backupName(name, l.LocalTime)
+		newname := l.backupName(name, l.LocalTime)
+		err := os.MkdirAll(filepath.Dir(newname), 0755)
+		if err != nil {
+			return fmt.Errorf("can't make directories for backup logfile: %s", err)
+		}
 		if err := os.Rename(name, newname); err != nil {
 			return fmt.Errorf("can't rename log file: %s", err)
 		}
@@ -244,8 +260,8 @@ func (l *Logger) openNew() error {
 // backupName creates a new filename from the given name, inserting a timestamp
 // between the filename and the extension, using the local time if requested
 // (otherwise UTC).
-func backupName(name string, local bool) string {
-	dir := filepath.Dir(name)
+func (l *Logger) backupName(name string, local bool) string {
+	dir := l.backupDir()
 	filename := filepath.Base(name)
 	ext := filepath.Ext(filename)
 	prefix := filename[:len(filename)-len(ext)]
@@ -254,8 +270,22 @@ func backupName(name string, local bool) string {
 		t = t.UTC()
 	}
 
-	timestamp := t.Format(backupTimeFormat)
+	timestamp := t.Format(l.timeFormat())
 	return filepath.Join(dir, fmt.Sprintf("%s-%s%s", prefix, timestamp, ext))
+}
+
+func (l *Logger) backupDir() string {
+	if l.BackupDir != "" {
+		return l.BackupDir
+	}
+	return l.dir()
+}
+
+func (l *Logger) timeFormat() string {
+	if l.TimeFormat != "" {
+		return l.TimeFormat
+	}
+	return DefaultTimeFormat
 }
 
 // openExistingOrNew opens the logfile if it exists and if the current write
@@ -311,6 +341,7 @@ func (l *Logger) millRunOnce() error {
 		return err
 	}
 
+	backupDir := l.backupDir()
 	var compress, remove []logInfo
 
 	if l.MaxBackups > 0 && l.MaxBackups < len(files) {
@@ -357,13 +388,13 @@ func (l *Logger) millRunOnce() error {
 	}
 
 	for _, f := range remove {
-		errRemove := os.Remove(filepath.Join(l.dir(), f.Name()))
+		errRemove := os.Remove(filepath.Join(backupDir, f.Name()))
 		if err == nil && errRemove != nil {
 			err = errRemove
 		}
 	}
 	for _, f := range compress {
-		fn := filepath.Join(l.dir(), f.Name())
+		fn := filepath.Join(backupDir, f.Name())
 		errCompress := compressLogFile(fn, fn+compressSuffix)
 		if err == nil && errCompress != nil {
 			err = errCompress
@@ -398,7 +429,7 @@ func (l *Logger) mill() {
 // oldLogFiles returns the list of backup log files stored in the same
 // directory as the current log file, sorted by ModTime
 func (l *Logger) oldLogFiles() ([]logInfo, error) {
-	files, err := ioutil.ReadDir(l.dir())
+	files, err := ioutil.ReadDir(l.backupDir())
 	if err != nil {
 		return nil, fmt.Errorf("can't read log file directory: %s", err)
 	}
@@ -438,7 +469,7 @@ func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 		return time.Time{}, errors.New("mismatched extension")
 	}
 	ts := filename[len(prefix) : len(filename)-len(ext)]
-	return time.Parse(backupTimeFormat, ts)
+	return time.Parse(l.timeFormat(), ts)
 }
 
 // max returns the maximum size in bytes of log files before rolling.

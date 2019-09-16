@@ -96,7 +96,7 @@ func TestWriteTooLong(t *testing.T) {
 
 func TestMakeLogDir(t *testing.T) {
 	currentTime = fakeTime
-	dir := time.Now().Format("TestMakeLogDir" + backupTimeFormat)
+	dir := time.Now().Format("TestMakeLogDir" + DefaultTimeFormat)
 	dir = filepath.Join(os.TempDir(), dir)
 	defer os.RemoveAll(dir)
 	filename := logFile(dir)
@@ -445,43 +445,60 @@ func TestMaxAge(t *testing.T) {
 }
 
 func TestOldLogFiles(t *testing.T) {
-	currentTime = fakeTime
-	megabyte = 1
+	forEachBackupTestSpec(t, func(t *testing.T, test backupTestSpec) {
+		currentTime = fakeTime
+		megabyte = 1
 
-	dir := makeTempDir("TestOldLogFiles", t)
-	defer os.RemoveAll(dir)
+		dir := makeTempDir("TestOldLogFiles", t)
+		defer os.RemoveAll(dir)
+		var backupDir string
+		effectiveBackupDir := dir
+		if test.customBackupDir {
+			backupDir = makeTempDir("TestOldLogFilesBackup", t)
+			defer os.RemoveAll(backupDir)
+			effectiveBackupDir = backupDir
+		}
 
-	filename := logFile(dir)
-	data := []byte("data")
-	err := ioutil.WriteFile(filename, data, 07)
-	isNil(err, t)
+		filename := logFile(dir)
+		data := []byte("data")
+		err := ioutil.WriteFile(filename, data, 07)
+		isNil(err, t)
 
-	// This gives us a time with the same precision as the time we get from the
-	// timestamp in the name.
-	t1, err := time.Parse(backupTimeFormat, fakeTime().UTC().Format(backupTimeFormat))
-	isNil(err, t)
+		// This gives us a time with the same precision as the time we get from the
+		// timestamp in the name.
+		getTime := func() time.Time {
+			theTime := fakeTime()
+			if !test.local {
+				theTime = theTime.UTC()
+			}
+			theTime, err := time.Parse(test.timeFormat, theTime.Format(test.timeFormat))
+			isNil(err, t)
+			return theTime
+		}
 
-	backup := backupFile(dir)
-	err = ioutil.WriteFile(backup, data, 07)
-	isNil(err, t)
+		t1 := getTime()
 
-	newFakeTime()
+		backup := backupFile(effectiveBackupDir, withLocalTime(test.local), withTimeFormat(test.timeFormat))
+		err = ioutil.WriteFile(backup, data, 07)
+		isNil(err, t)
 
-	t2, err := time.Parse(backupTimeFormat, fakeTime().UTC().Format(backupTimeFormat))
-	isNil(err, t)
+		newFakeTime()
 
-	backup2 := backupFile(dir)
-	err = ioutil.WriteFile(backup2, data, 07)
-	isNil(err, t)
+		t2 := getTime()
 
-	l := &Logger{Filename: filename}
-	files, err := l.oldLogFiles()
-	isNil(err, t)
-	equals(2, len(files), t)
+		backup2 := backupFile(effectiveBackupDir, withLocalTime(test.local), withTimeFormat(test.timeFormat))
+		err = ioutil.WriteFile(backup2, data, 07)
+		isNil(err, t)
 
-	// should be sorted by newest file first, which would be t2
-	equals(t2, files[0].timestamp, t)
-	equals(t1, files[1].timestamp, t)
+		l := &Logger{Filename: filename, LocalTime: test.local, TimeFormat: test.timeFormat, BackupDir: backupDir}
+		files, err := l.oldLogFiles()
+		isNil(err, t)
+		equals(2, len(files), t)
+
+		// should be sorted by newest file first, which would be t2
+		equals(t2, files[0].timestamp, t)
+		equals(t1, files[1].timestamp, t)
+	})
 }
 
 func TestTimeFromName(t *testing.T) {
@@ -530,64 +547,87 @@ func TestLocalTime(t *testing.T) {
 	equals(len(b2), n2, t)
 
 	existsWithContent(logFile(dir), b2, t)
-	existsWithContent(backupFileLocal(dir), b, t)
+	existsWithContent(backupFile(dir, withLocalTime(true)), b, t)
 }
 
 func TestRotate(t *testing.T) {
-	currentTime = fakeTime
-	dir := makeTempDir("TestRotate", t)
-	defer os.RemoveAll(dir)
+	forEachBackupTestSpec(t, func(t *testing.T, test backupTestSpec) {
+		currentTime = fakeTime
+		dir := makeTempDir("TestRotate", t)
+		defer os.RemoveAll(dir)
+		var backupDir string
+		effectiveBackupDir := dir
+		if test.customBackupDir {
+			// Temp non-existing dir - expected to be created on rotate
+			backupDir = filepath.Join(makeTempDir("TestOldLogFilesBackup", t), "backups")
+			defer os.RemoveAll(backupDir)
+			effectiveBackupDir = backupDir
+		}
 
-	filename := logFile(dir)
+		filename := logFile(dir)
 
-	l := &Logger{
-		Filename:   filename,
-		MaxBackups: 1,
-		MaxSize:    100, // megabytes
-	}
-	defer l.Close()
-	b := []byte("boo!")
-	n, err := l.Write(b)
-	isNil(err, t)
-	equals(len(b), n, t)
+		l := &Logger{
+			Filename:   filename,
+			MaxBackups: 1,
+			MaxSize:    100, // megabytes
+			BackupDir:  backupDir,
+			TimeFormat: test.timeFormat,
+			LocalTime:  test.local,
+		}
+		defer l.Close()
+		b := []byte("boo!")
+		n, err := l.Write(b)
+		isNil(err, t)
+		equals(len(b), n, t)
 
-	existsWithContent(filename, b, t)
-	fileCount(dir, 1, t)
+		existsWithContent(filename, b, t)
+		fileCount(dir, 1, t)
 
-	newFakeTime()
+		newFakeTime()
 
-	err = l.Rotate()
-	isNil(err, t)
+		err = l.Rotate()
+		isNil(err, t)
 
-	// we need to wait a little bit since the files get deleted on a different
-	// goroutine.
-	<-time.After(10 * time.Millisecond)
+		// we need to wait a little bit since the files get deleted on a different
+		// goroutine.
+		<-time.After(10 * time.Millisecond)
 
-	filename2 := backupFile(dir)
-	existsWithContent(filename2, b, t)
-	existsWithContent(filename, []byte{}, t)
-	fileCount(dir, 2, t)
-	newFakeTime()
+		filename2 := backupFile(effectiveBackupDir, withLocalTime(test.local), withTimeFormat(test.timeFormat))
+		existsWithContent(filename2, b, t)
+		existsWithContent(filename, []byte{}, t)
+		if test.customBackupDir {
+			fileCount(dir, 1, t)
+			fileCount(effectiveBackupDir, 1, t)
+		} else {
+			fileCount(dir, 2, t)
+		}
+		newFakeTime()
 
-	err = l.Rotate()
-	isNil(err, t)
+		err = l.Rotate()
+		isNil(err, t)
 
-	// we need to wait a little bit since the files get deleted on a different
-	// goroutine.
-	<-time.After(10 * time.Millisecond)
+		// we need to wait a little bit since the files get deleted on a different
+		// goroutine.
+		<-time.After(10 * time.Millisecond)
 
-	filename3 := backupFile(dir)
-	existsWithContent(filename3, []byte{}, t)
-	existsWithContent(filename, []byte{}, t)
-	fileCount(dir, 2, t)
+		filename3 := backupFile(effectiveBackupDir, withLocalTime(test.local), withTimeFormat(test.timeFormat))
+		existsWithContent(filename3, []byte{}, t)
+		existsWithContent(filename, []byte{}, t)
+		if test.customBackupDir {
+			fileCount(dir, 1, t)
+			fileCount(effectiveBackupDir, 1, t)
+		} else {
+			fileCount(dir, 2, t)
+		}
 
-	b2 := []byte("foooooo!")
-	n, err = l.Write(b2)
-	isNil(err, t)
-	equals(len(b2), n, t)
+		b2 := []byte("foooooo!")
+		n, err = l.Write(b2)
+		isNil(err, t)
+		equals(len(b2), n, t)
 
-	// this will use the new fake time
-	existsWithContent(filename, b2, t)
+		// this will use the new fake time
+		existsWithContent(filename, b2, t)
+	})
 }
 
 func TestCompressOnRotate(t *testing.T) {
@@ -696,7 +736,9 @@ func TestJson(t *testing.T) {
 	"maxage": 10,
 	"maxbackups": 3,
 	"localtime": true,
-	"compress": true
+	"compress": true,
+	"timeformat": "1:2.3",
+	"backupdir": "bar"
 }`[1:])
 
 	l := Logger{}
@@ -708,6 +750,8 @@ func TestJson(t *testing.T) {
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
 	equals(true, l.Compress, t)
+	equals("1:2.3", l.TimeFormat, t)
+	equals("bar", l.BackupDir, t)
 }
 
 func TestYaml(t *testing.T) {
@@ -717,7 +761,9 @@ maxsize: 5
 maxage: 10
 maxbackups: 3
 localtime: true
-compress: true`[1:])
+compress: true
+timeformat: 1:2.3
+backupdir: bar`[1:])
 
 	l := Logger{}
 	err := yaml.Unmarshal(data, &l)
@@ -728,6 +774,8 @@ compress: true`[1:])
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
 	equals(true, l.Compress, t)
+	equals("1:2.3", l.TimeFormat, t)
+	equals("bar", l.BackupDir, t)
 }
 
 func TestToml(t *testing.T) {
@@ -737,7 +785,9 @@ maxsize = 5
 maxage = 10
 maxbackups = 3
 localtime = true
-compress = true`[1:]
+compress = true
+timeformat = "1:2.3"
+backupdir = "bar"`[1:]
 
 	l := Logger{}
 	md, err := toml.Decode(data, &l)
@@ -748,14 +798,60 @@ compress = true`[1:]
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
 	equals(true, l.Compress, t)
+	equals("1:2.3", l.TimeFormat, t)
+	equals("bar", l.BackupDir, t)
 	equals(0, len(md.Undecoded()), t)
+}
+
+func forEachBackupTestSpec(t *testing.T, do func(t *testing.T, test backupTestSpec)) {
+	for _, test := range backupTestSpecs() {
+		t.Run(test.name, func(t *testing.T) {
+			do(t, test)
+		})
+	}
+}
+
+type backupTestSpec struct {
+	name            string
+	local           bool
+	timeFormat      string
+	customBackupDir bool
+}
+
+func backupTestSpecs() []backupTestSpec {
+	return []backupTestSpec{
+		{
+			name:            "Default time format, UTC, default backup dir",
+			local:           false,
+			timeFormat:      DefaultTimeFormat,
+			customBackupDir: false,
+		},
+		{
+			name:            "Default time format, local time, custom backup dir",
+			local:           true,
+			timeFormat:      DefaultTimeFormat,
+			customBackupDir: true,
+		},
+		{
+			name:            "Custom time format, UTC, custom backup dir",
+			local:           false,
+			timeFormat:      "20060102150405000",
+			customBackupDir: true,
+		},
+		{
+			name:            "Default time format, local time, default backup dir",
+			local:           true,
+			timeFormat:      "2006.01.02.15.04.05.000",
+			customBackupDir: false,
+		},
+	}
 }
 
 // makeTempDir creates a file with a semi-unique name in the OS temp directory.
 // It should be based on the name of the test, to keep parallel tests from
 // colliding, and must be cleaned up after the test is finished.
 func makeTempDir(name string, t testing.TB) string {
-	dir := time.Now().Format(name + backupTimeFormat)
+	dir := time.Now().Format(name + DefaultTimeFormat)
 	dir = filepath.Join(os.TempDir(), dir)
 	isNilUp(os.Mkdir(dir, 0700), t, 1)
 	return dir
@@ -778,18 +874,38 @@ func logFile(dir string) string {
 	return filepath.Join(dir, "foobar.log")
 }
 
-func backupFile(dir string) string {
-	return filepath.Join(dir, "foobar-"+fakeTime().UTC().Format(backupTimeFormat)+".log")
+func backupFile(dir string, opts ...backupFileOpt) string {
+	options := backupFileOpts{
+		local:      false,
+		timeFormat: DefaultTimeFormat,
+	}
+	for _, opt := range opts {
+		opt(&options)
+	}
+	currTime := fakeTime()
+	if !options.local {
+		currTime = currTime.UTC()
+	}
+	return filepath.Join(dir, "foobar-"+currTime.Format(options.timeFormat)+".log")
 }
 
-func backupFileLocal(dir string) string {
-	return filepath.Join(dir, "foobar-"+fakeTime().Format(backupTimeFormat)+".log")
+type backupFileOpts struct {
+	local      bool
+	timeFormat string
 }
 
-// logFileLocal returns the log file name in the given directory for the current
-// fake time using the local timezone.
-func logFileLocal(dir string) string {
-	return filepath.Join(dir, fakeTime().Format(backupTimeFormat))
+type backupFileOpt func(opts *backupFileOpts)
+
+func withLocalTime(local bool) backupFileOpt {
+	return func(opts *backupFileOpts) {
+		opts.local = local
+	}
+}
+
+func withTimeFormat(format string) backupFileOpt {
+	return func(opts *backupFileOpts) {
+		opts.timeFormat = format
+	}
 }
 
 // fileCount checks that the number of files in the directory is exp.
