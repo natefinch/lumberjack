@@ -94,6 +94,41 @@ func TestWriteTooLong(t *testing.T) {
 	assert(os.IsNotExist(err), t, "File exists, but should not have been created")
 }
 
+func TestKbyteOverload(t *testing.T) {
+
+	dir := makeTempDir("TestKbyteOverload", t)
+	defer os.RemoveAll(dir)
+	l := &Logger{
+		Filename: logFile(dir),
+	}
+	defer l.Close()
+
+	// Default size is still 100Mb
+	equals(int64(100*megabyte), l.max(), t)
+
+	// If we set a MaxSize, we keep value in Mb
+	l = &Logger{
+		Filename:logFile(dir),
+		MaxSize: 10,
+	}
+	equals(int64(10*megabyte), l.max(), t)
+
+	// If we set a MaxSizeKByte, we overload the value with the Kbyte value
+	l = &Logger{
+		Filename:logFile(dir),
+		MaxSizeKByte: 100,
+	}
+	equals(int64(100*kilobyte), l.max(), t)
+
+	// If we set a both, we overload the value with the Kbyte value
+	l = &Logger{
+		Filename:logFile(dir),
+		MaxSizeKByte: 100,
+		MaxSize:120,
+	}
+	equals(int64(100*kilobyte), l.max(), t)
+}
+
 func TestMakeLogDir(t *testing.T) {
 	currentTime = fakeTime
 	dir := time.Now().Format("TestMakeLogDir" + backupTimeFormat)
