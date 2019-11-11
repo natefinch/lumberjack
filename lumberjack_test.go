@@ -120,7 +120,7 @@ func TestKbyteOverload(t *testing.T) {
 	}
 	equals(int64(100*kilobyte), l.max(), t)
 
-	// If we set a both, we overload the value with the Kbyte value
+	// If we set both, we overload the value with the Kbyte value
 	l = &Logger{
 		Filename:logFile(dir),
 		MaxSizeKByte: 100,
