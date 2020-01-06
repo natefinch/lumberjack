@@ -3,7 +3,7 @@ package lumberjack_test
 import (
 	"log"
 
-	"gopkg.in/natefinch/lumberjack.v2"
+	"github.com/natefinch/lumberjack"
 )
 
 // To use lumberjack with the standard library's log package, just pass it into
@@ -11,9 +11,9 @@ import (
 func Example() {
 	log.SetOutput(&lumberjack.Logger{
 		Filename:   "/var/log/myapp/foo.log",
-		MaxSize:    500, // megabytes
+		MaxBytes:   500 * 1024 * 1024, // 500 MiB
 		MaxBackups: 3,
-		MaxAge:     28, // days
+		MaxAge:     28,   // days
 		Compress:   true, // disabled by default
 	})
 }
