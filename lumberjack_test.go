@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,9 +25,14 @@ import (
 // Since all the tests uses the time to determine filenames etc, we need to
 // control the wall clock as much as possible, which means having a wall clock
 // that doesn't change unless we want it to.
-var fakeCurrentTime = time.Now()
+var (
+	fakeCurrentTime = time.Now()
+	fakeTimeMu      sync.Mutex
+)
 
 func fakeTime() time.Time {
+	fakeTimeMu.Lock()
+	defer fakeTimeMu.Unlock()
 	return fakeCurrentTime
 }
 
@@ -202,11 +208,13 @@ func TestMaxBackups(t *testing.T) {
 	dir := makeTempDir("TestMaxBackups", t)
 	defer os.RemoveAll(dir)
 
+	notify := make(chan struct{})
 	filename := logFile(dir)
 	l := &Logger{
-		Filename:   filename,
-		MaxSize:    10,
-		MaxBackups: 1,
+		Filename:      filename,
+		MaxSize:       10,
+		MaxBackups:    1,
+		notifyRemoved: notify,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -248,9 +256,7 @@ func TestMaxBackups(t *testing.T) {
 
 	existsWithContent(filename, b3, t)
 
-	// we need to wait a little bit since the files get deleted on a different
-	// goroutine.
-	<-time.After(time.Millisecond * 10)
+	waitForNotify(notify, t)
 
 	// should only have two files in the dir still
 	fileCount(dir, 2, t)
@@ -298,9 +304,7 @@ func TestMaxBackups(t *testing.T) {
 	existsWithContent(fourthFilename, b3, t)
 	existsWithContent(fourthFilename+compressSuffix, []byte("compress"), t)
 
-	// we need to wait a little bit since the files get deleted on a different
-	// goroutine.
-	<-time.After(time.Millisecond * 10)
+	waitForNotify(notify, t)
 
 	// We should have four things in the directory now - the 2 log files, the
 	// not log file, and the directory
@@ -354,24 +358,27 @@ func TestCleanupExistingBackups(t *testing.T) {
 	filename := logFile(dir)
 	err = ioutil.WriteFile(filename, data, 0644)
 	isNil(err, t)
-
+	notify := make(chan struct{})
 	l := &Logger{
-		Filename:   filename,
-		MaxSize:    10,
-		MaxBackups: 1,
+		Filename:      filename,
+		MaxSize:       10,
+		MaxBackups:    1,
+		notifyRemoved: notify,
 	}
 	defer l.Close()
 
 	newFakeTime()
 
-	b2 := []byte("foooooo!")
+	// Don't write enough to trigger a rotate or there is
+	// a race between whether or not there is one notification
+	// or two depending on how far through the millRunOnce method
+	// gets before the Write method calls rotate.
+	b2 := []byte("foo")
 	n, err := l.Write(b2)
 	isNil(err, t)
 	equals(len(b2), n, t)
 
-	// we need to wait a little bit since the files get deleted on a different
-	// goroutine.
-	<-time.After(time.Millisecond * 10)
+	waitForNotify(notify, t)
 
 	// now we should only have 2 files left - the primary and one backup
 	fileCount(dir, 2, t)
@@ -385,12 +392,15 @@ func TestMaxAge(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	filename := logFile(dir)
+	notify := make(chan struct{})
 	l := &Logger{
-		Filename: filename,
-		MaxSize:  10,
-		MaxAge:   1,
+		Filename:      filename,
+		MaxSize:       10,
+		MaxAge:        1,
+		notifyRemoved: notify,
 	}
 	defer l.Close()
+
 	b := []byte("boo!")
 	n, err := l.Write(b)
 	isNil(err, t)
@@ -407,10 +417,6 @@ func TestMaxAge(t *testing.T) {
 	isNil(err, t)
 	equals(len(b2), n, t)
 	existsWithContent(backupFile(dir), b, t)
-
-	// we need to wait a little bit since the files get deleted on a different
-	// goroutine.
-	<-time.After(10 * time.Millisecond)
 
 	// We should still have 2 log files, since the most recent backup was just
 	// created.
@@ -430,9 +436,7 @@ func TestMaxAge(t *testing.T) {
 	equals(len(b3), n, t)
 	existsWithContent(backupFile(dir), b2, t)
 
-	// we need to wait a little bit since the files get deleted on a different
-	// goroutine.
-	<-time.After(10 * time.Millisecond)
+	waitForNotify(notify, t)
 
 	// We should have 2 log files - the main log file, and the most recent
 	// backup.  The earlier backup is past the cutoff and should be gone.
@@ -539,11 +543,12 @@ func TestRotate(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	filename := logFile(dir)
-
+	notify := make(chan struct{})
 	l := &Logger{
-		Filename:   filename,
-		MaxBackups: 1,
-		MaxSize:    100, // megabytes
+		Filename:      filename,
+		MaxBackups:    1,
+		MaxSize:       100, // megabytes
+		notifyRemoved: notify,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -559,10 +564,6 @@ func TestRotate(t *testing.T) {
 	err = l.Rotate()
 	isNil(err, t)
 
-	// we need to wait a little bit since the files get deleted on a different
-	// goroutine.
-	<-time.After(10 * time.Millisecond)
-
 	filename2 := backupFile(dir)
 	existsWithContent(filename2, b, t)
 	existsWithContent(filename, []byte{}, t)
@@ -572,9 +573,7 @@ func TestRotate(t *testing.T) {
 	err = l.Rotate()
 	isNil(err, t)
 
-	// we need to wait a little bit since the files get deleted on a different
-	// goroutine.
-	<-time.After(10 * time.Millisecond)
+	waitForNotify(notify, t)
 
 	filename3 := backupFile(dir)
 	existsWithContent(filename3, []byte{}, t)
@@ -597,11 +596,13 @@ func TestCompressOnRotate(t *testing.T) {
 	dir := makeTempDir("TestCompressOnRotate", t)
 	defer os.RemoveAll(dir)
 
+	notify := make(chan struct{})
 	filename := logFile(dir)
 	l := &Logger{
-		Compress: true,
-		Filename: filename,
-		MaxSize:  10,
+		Compress:         true,
+		Filename:         filename,
+		MaxSize:          10,
+		notifyCompressed: notify,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -621,9 +622,7 @@ func TestCompressOnRotate(t *testing.T) {
 	// nothing in it.
 	existsWithContent(filename, []byte{}, t)
 
-	// we need to wait a little bit since the files get compressed on a different
-	// goroutine.
-	<-time.After(300 * time.Millisecond)
+	waitForNotify(notify, t)
 
 	// a compressed version of the log file should now exist and the original
 	// should have been removed.
@@ -646,11 +645,13 @@ func TestCompressOnResume(t *testing.T) {
 	dir := makeTempDir("TestCompressOnResume", t)
 	defer os.RemoveAll(dir)
 
+	notify := make(chan struct{})
 	filename := logFile(dir)
 	l := &Logger{
-		Compress: true,
-		Filename: filename,
-		MaxSize:  10,
+		Compress:         true,
+		Filename:         filename,
+		MaxSize:          10,
+		notifyCompressed: notify,
 	}
 	defer l.Close()
 
@@ -670,9 +671,7 @@ func TestCompressOnResume(t *testing.T) {
 	equals(len(b2), n, t)
 	existsWithContent(filename, b2, t)
 
-	// we need to wait a little bit since the files get compressed on a different
-	// goroutine.
-	<-time.After(300 * time.Millisecond)
+	waitForNotify(notify, t)
 
 	// The write should have started the compression - a compressed version of
 	// the log file should now exist and the original should have been removed.
@@ -802,6 +801,8 @@ func fileCount(dir string, exp int, t testing.TB) {
 
 // newFakeTime sets the fake "current time" to two days later.
 func newFakeTime() {
+	fakeTimeMu.Lock()
+	defer fakeTimeMu.Unlock()
 	fakeCurrentTime = fakeCurrentTime.Add(time.Hour * 24 * 2)
 }
 
@@ -813,4 +814,14 @@ func notExist(path string, t testing.TB) {
 func exists(path string, t testing.TB) {
 	_, err := os.Stat(path)
 	assertUp(err == nil, t, 1, "expected file to exist, but got error from os.Stat: %v", err)
+}
+
+func waitForNotify(notify <-chan struct{}, t testing.TB) {
+	select {
+	case <-notify:
+		// All good.
+	case <-time.After(2 * time.Second):
+		fmt.Println("logger notify not signalled")
+		t.FailNow()
+	}
 }
