@@ -369,7 +369,11 @@ func TestCleanupExistingBackups(t *testing.T) {
 
 	newFakeTime()
 
-	b2 := []byte("foooooo!")
+	// Don't write enough to trigger a rotate or there is
+	// a race between whether or not there is one notification
+	// or two depending on how far through the millRunOnce method
+	// gets before the Write method calls rotate.
+	b2 := []byte("foo")
 	n, err := l.Write(b2)
 	isNil(err, t)
 	equals(len(b2), n, t)
@@ -630,6 +634,55 @@ func TestCompressOnRotate(t *testing.T) {
 	isNil(err, t)
 	existsWithContent(backupFile(dir)+compressSuffix, bc.Bytes(), t)
 	notExist(backupFile(dir), t)
+
+	fileCount(dir, 2, t)
+}
+
+func TestCompressOnResume(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+
+	dir := makeTempDir("TestCompressOnResume", t)
+	defer os.RemoveAll(dir)
+
+	notify := make(chan struct{})
+	filename := logFile(dir)
+	l := &Logger{
+		Compress:         true,
+		Filename:         filename,
+		MaxSize:          10,
+		notifyCompressed: notify,
+	}
+	defer l.Close()
+
+	// Create a backup file and empty "compressed" file.
+	filename2 := backupFile(dir)
+	b := []byte("foo!")
+	err := ioutil.WriteFile(filename2, b, 0644)
+	isNil(err, t)
+	err = ioutil.WriteFile(filename2+compressSuffix, []byte{}, 0644)
+	isNil(err, t)
+
+	newFakeTime()
+
+	b2 := []byte("boo!")
+	n, err := l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+	existsWithContent(filename, b2, t)
+
+	waitForNotify(notify, t)
+
+	// The write should have started the compression - a compressed version of
+	// the log file should now exist and the original should have been removed.
+	bc := new(bytes.Buffer)
+	gz := gzip.NewWriter(bc)
+	_, err = gz.Write(b)
+	isNil(err, t)
+	err = gz.Close()
+	isNil(err, t)
+	existsWithContent(filename2+compressSuffix, bc.Bytes(), t)
+	notExist(filename2, t)
 
 	fileCount(dir, 2, t)
 }

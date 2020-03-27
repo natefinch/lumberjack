@@ -281,6 +281,8 @@ func backupName(name string, local bool) string {
 // would not put it over MaxSize.  If there is no such file or the write would
 // put it over the MaxSize, a new file is created.
 func (l *Logger) openExistingOrNew(writeLen int) error {
+	l.mill()
+
 	filename := l.filename()
 	info, err := os_Stat(filename)
 	if os.IsNotExist(err) {
