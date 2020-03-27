@@ -111,7 +111,18 @@ type Logger struct {
 	file *os.File
 	mu   sync.Mutex
 
+	wg     *sync.WaitGroup
 	millCh chan struct{}
+
+	// notifyCompressed is only set and used for tests. It is signalled when
+	// millRunOnce compresses some files. If no files are compressed,
+	// notifyCompressed is not signalled.
+	notifyCompressed chan struct{}
+
+	// notifyRemoved is only set and used for tests. It is signalled when the
+	// millRunOnce method removes some old log files. If no files are removed,
+	// notifyRemoved is not signalled.
+	notifyRemoved chan struct{}
 }
 
 var (
@@ -164,7 +175,16 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 func (l *Logger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.close()
+	if err := l.close(); err != nil {
+		return err
+	}
+	if l.millCh != nil {
+		close(l.millCh)
+		l.wg.Wait()
+		l.millCh = nil
+		l.wg = nil
+	}
+	return nil
 }
 
 // close closes the file if it is open.
@@ -174,10 +194,6 @@ func (l *Logger) close() error {
 	}
 	err := l.file.Close()
 	l.file = nil
-	if l.millCh != nil {
-		close(l.millCh)
-		l.millCh = nil
-	}
 	return err
 }
 
@@ -265,8 +281,6 @@ func backupName(name string, local bool) string {
 // would not put it over MaxSize.  If there is no such file or the write would
 // put it over the MaxSize, a new file is created.
 func (l *Logger) openExistingOrNew(writeLen int) error {
-	l.mill()
-
 	filename := l.filename()
 	info, err := os_Stat(filename)
 	if os.IsNotExist(err) {
@@ -359,20 +373,30 @@ func (l *Logger) millRunOnce() error {
 		}
 	}
 
+	filesRemoved := false
 	for _, f := range remove {
 		errRemove := os.Remove(filepath.Join(l.dir(), f.Name()))
 		if err == nil && errRemove != nil {
 			err = errRemove
 		}
+		filesRemoved = true
 	}
+	if filesRemoved && l.notifyRemoved != nil {
+		l.notifyRemoved <- struct{}{}
+	}
+
+	filesCompressed := false
 	for _, f := range compress {
 		fn := filepath.Join(l.dir(), f.Name())
 		errCompress := compressLogFile(fn, fn+compressSuffix)
 		if err == nil && errCompress != nil {
 			err = errCompress
 		}
+		filesCompressed = true
 	}
-
+	if filesCompressed && l.notifyCompressed != nil {
+		l.notifyCompressed <- struct{}{}
+	}
 	return err
 }
 
@@ -391,7 +415,12 @@ func (l *Logger) mill() {
 	// It is safe to check the millCh here as we are inside the mutex lock.
 	if l.millCh == nil {
 		l.millCh = make(chan struct{}, 1)
-		go l.millRun(l.millCh)
+		l.wg = &sync.WaitGroup{}
+		l.wg.Add(1)
+		go func() {
+			l.millRun(l.millCh)
+			l.wg.Done()
+		}()
 	}
 	select {
 	case l.millCh <- struct{}{}:
