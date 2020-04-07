@@ -136,7 +136,7 @@ func TestRollingInterval(t *testing.T) {
 	l := &Logger{
 		Filename:        filename,
 		MaxSize:         100,
-		RollingInterval: 1,
+		RollingInterval: 2,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -145,12 +145,11 @@ func TestRollingInterval(t *testing.T) {
 		n, err := l.Write(b)
 		isNil(err, t)
 		bCount += n
-		<-time.After(time.Millisecond * 100)
 	}
 	equals(len(allBytes), bCount, t)
 	existsWithContent(filename, allBytes, t)
 	fileCount(dir, 1, t)
-	<-time.After(time.Millisecond * 800)
+	<-time.After(time.Millisecond * 2000)
 	n, err := l.Write(b)
 	isNil(err, t)
 	equals(len(b), n, t)
