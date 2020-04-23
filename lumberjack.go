@@ -82,6 +82,10 @@ type Logger struct {
 	// os.TempDir() if empty.
 	Filename string `json:"filename" yaml:"filename"`
 
+	// LinkName is a symbolic link name that links to the current filename
+	// being used. No symbolic link will be created if Linkname is empty.
+	LinkName string `json:"linkname" yaml:"linkname"`
+
 	// MaxSize is the maximum size in megabytes of the log file before it gets
 	// rotated. It defaults to 100 megabytes.
 	MaxSize int `json:"maxsize" yaml:"maxsize"`
@@ -203,6 +207,21 @@ func (l *Logger) rotate() error {
 	return nil
 }
 
+// createSymLink creates a new symbolic link for the current file used.
+func (l *Logger) createSymLink(name string) error {
+	if l.LinkName != "" {
+		tmpLinkName := name + `_symlink`
+		if err := os.Symlink(name, tmpLinkName); err != nil {
+			return fmt.Errorf("failed to create new symlink: %s", err)
+		}
+
+		if err := os.Rename(tmpLinkName, l.linkname()); err != nil {
+			return fmt.Errorf("failed to rename new symlink: %s", err)
+		}
+	}
+	return nil
+}
+
 // openNew opens a new log file for writing, moving any old log file out of the
 // way.  This methods assumes the file has already been closed.
 func (l *Logger) openNew() error {
@@ -238,6 +257,11 @@ func (l *Logger) openNew() error {
 	}
 	l.file = f
 	l.size = 0
+
+	if err := l.createSymLink(name); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -285,6 +309,11 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 	}
 	l.file = file
 	l.size = info.Size()
+
+	if err := l.createSymLink(filename); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -295,6 +324,11 @@ func (l *Logger) filename() string {
 	}
 	name := filepath.Base(os.Args[0]) + "-lumberjack.log"
 	return filepath.Join(os.TempDir(), name)
+}
+
+// linkname returns the name of the logfile symbolic link from the current time.
+func (l *Logger) linkname() string {
+	return filepath.Join(filepath.Dir(l.filename()), l.LinkName)
 }
 
 // millRunOnce performs compression and removal of stale log files.

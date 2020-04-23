@@ -47,6 +47,26 @@ func TestNewFile(t *testing.T) {
 	fileCount(dir, 1, t)
 }
 
+func TestLinkname(t *testing.T) {
+	currentTime = fakeTime
+	linkName := "custom-linkname"
+
+	dir := makeTempDir("TestNewFile", t)
+	os.Mkdir(dir, 0755)
+	defer os.RemoveAll(dir)
+	l := &Logger{
+		Filename: logFile(dir),
+		LinkName: linkName,
+	}
+	//defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+	existsWithContent(filepath.Join(dir, linkName), b, t)
+	fileCount(dir, 2, t)
+}
+
 func TestOpenExisting(t *testing.T) {
 	currentTime = fakeTime
 	dir := makeTempDir("TestOpenExisting", t)

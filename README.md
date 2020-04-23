@@ -34,6 +34,7 @@ Code:
 ```go
 log.SetOutput(&lumberjack.Logger{
     Filename:   "/var/log/myapp/foo.log",
+    Linkname:   "applog",
     MaxSize:    500, // megabytes
     MaxBackups: 3,
     MaxAge:     28, //days
@@ -50,6 +51,10 @@ type Logger struct {
     // in the same directory.  It uses <processname>-lumberjack.log in
     // os.TempDir() if empty.
     Filename string `json:"filename" yaml:"filename"`
+
+	// LinkName is a symbolic link name that links to the current filename
+	// being used. No symbolic link will be created if Linkname is empty.
+	LinkName string `json:"linkname" yaml:"linkname"`
 
     // MaxSize is the maximum size in megabytes of the log file before it gets
     // rotated. It defaults to 100 megabytes.
