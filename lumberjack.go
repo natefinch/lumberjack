@@ -410,7 +410,7 @@ func (l *Logger) mill() {
 	}
 }
 
-// automates rotation periodly
+// automates rotation periodically
 func (l *Logger) periodRotate() {
 	if l.Period <= PERIOD_CLOSE {
 		return
