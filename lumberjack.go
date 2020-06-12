@@ -425,6 +425,9 @@ func (l *Logger) periodRotate() {
 	currentSecond := timer.Second()
 	currentMinute := timer.Minute()
 	currentHour := timer.Hour()
+	if !l.LocalTime {
+		currentHour = timer.UTC().Hour()
+	}
 	switch l.Period {
 	case PERIOD_MINUTE:
 		period *= 60
