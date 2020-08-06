@@ -111,8 +111,13 @@ type Logger struct {
 	file *os.File
 	mu   sync.Mutex
 
-	millCh    chan bool
-	startMill sync.Once
+	millCh         chan struct{}
+	millShutdownCh chan struct{}
+
+	// notifyRemoved is signalled when one or more files are removed. Used only for testing.
+	notifyRemoved chan struct{}
+	// notifyCompressed is signalled when a file is compressed. Used only for testing.
+	notifyCompressed chan struct{}
 }
 
 var (
@@ -165,6 +170,14 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 func (l *Logger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
+	if l.millCh != nil {
+		close(l.millCh)
+		<-l.millShutdownCh
+		l.millCh = nil
+		l.millShutdownCh = nil
+	}
+
 	return l.close()
 }
 
@@ -356,18 +369,29 @@ func (l *Logger) millRunOnce() error {
 		}
 	}
 
+	filesRemoved := false
 	for _, f := range remove {
 		errRemove := os.Remove(filepath.Join(l.dir(), f.Name()))
 		if err == nil && errRemove != nil {
 			err = errRemove
 		}
+		filesRemoved = true
 	}
+	if filesRemoved && l.notifyRemoved != nil {
+		l.notifyRemoved <- struct{}{}
+	}
+
+	filesCompressed := false
 	for _, f := range compress {
 		fn := filepath.Join(l.dir(), f.Name())
 		errCompress := compressLogFile(fn, fn+compressSuffix)
 		if err == nil && errCompress != nil {
 			err = errCompress
 		}
+		filesCompressed = true
+	}
+	if filesCompressed && l.notifyCompressed != nil {
+		l.notifyCompressed <- struct{}{}
 	}
 
 	return err
@@ -376,21 +400,24 @@ func (l *Logger) millRunOnce() error {
 // millRun runs in a goroutine to manage post-rotation compression and removal
 // of old log files.
 func (l *Logger) millRun() {
-	for _ = range l.millCh {
+	for range l.millCh {
 		// what am I going to do, log this?
 		_ = l.millRunOnce()
 	}
+	l.millShutdownCh <- struct{}{}
 }
 
 // mill performs post-rotation compression and removal of stale log files,
 // starting the mill goroutine if necessary.
 func (l *Logger) mill() {
-	l.startMill.Do(func() {
-		l.millCh = make(chan bool, 1)
+	// We're inside the mutex, so it's okay to access millCh.
+	if l.millCh == nil {
+		l.millCh = make(chan struct{}, 1)
+		l.millShutdownCh = make(chan struct{}, 1)
 		go l.millRun()
-	})
+	}
 	select {
-	case l.millCh <- true:
+	case l.millCh <- struct{}{}:
 	default:
 	}
 }

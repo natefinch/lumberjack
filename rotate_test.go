@@ -1,4 +1,4 @@
-// +build linux
+// +build ignore
 
 package lumberjack_test
 
