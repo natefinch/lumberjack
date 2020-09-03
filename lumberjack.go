@@ -107,6 +107,10 @@ type Logger struct {
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
 
+	// BackupTimeFormat determines the file name format for file backup.The default
+	// value is backupTimeFormat
+	BackupTimeFormat string `json:"backuptimeformat" yaml:"backuptimeformat"`
+
 	size int64
 	file *os.File
 	mu   sync.Mutex
@@ -438,7 +442,7 @@ func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 		return time.Time{}, errors.New("mismatched extension")
 	}
 	ts := filename[len(prefix) : len(filename)-len(ext)]
-	return time.Parse(backupTimeFormat, ts)
+	return time.Parse(l.timeFormat(), ts)
 }
 
 // max returns the maximum size in bytes of log files before rolling.
@@ -448,6 +452,15 @@ func (l *Logger) max() int64 {
 	}
 	return int64(l.MaxSize) * int64(megabyte)
 }
+
+// timeFormat returns the time format for backup file.
+func (l *Logger) timeFormat() string {
+	if len(l.BackupTimeFormat) == 0{
+		return backupTimeFormat
+	}
+	return l.BackupTimeFormat
+}
+
 
 // dir returns the directory for the current filename.
 func (l *Logger) dir() string {
