@@ -9,6 +9,41 @@ import (
 	"time"
 )
 
+func TestDefaultMode(t *testing.T) {
+	currentTime = fakeTime
+	dir := makeTempDir("TestDefaultMode", t)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+
+	mode := os.FileMode(0600)
+
+	// the file is not pre-created
+	l := &Logger{
+		Filename:   filename,
+		MaxBackups: 1,
+		MaxSize:    100, // megabytes
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	newFakeTime()
+
+	err = l.Rotate()
+	isNil(err, t)
+
+	filename2 := backupFile(dir)
+	info, err := os.Stat(filename)
+	isNil(err, t)
+	info2, err := os.Stat(filename2)
+	isNil(err, t)
+	equals(mode, info.Mode(), t)
+	equals(mode, info2.Mode(), t)
+}
+
 func TestMaintainMode(t *testing.T) {
 	currentTime = fakeTime
 	dir := makeTempDir("TestMaintainMode", t)
@@ -98,7 +133,7 @@ func TestCompressMaintainMode(t *testing.T) {
 	f.Close()
 
 	l := &Logger{
-		Compress: true,
+		Compress:   true,
 		Filename:   filename,
 		MaxBackups: 1,
 		MaxSize:    100, // megabytes
@@ -123,7 +158,7 @@ func TestCompressMaintainMode(t *testing.T) {
 	filename2 := backupFile(dir)
 	info, err := os.Stat(filename)
 	isNil(err, t)
-	info2, err := os.Stat(filename2+compressSuffix)
+	info2, err := os.Stat(filename2 + compressSuffix)
 	isNil(err, t)
 	equals(mode, info.Mode(), t)
 	equals(mode, info2.Mode(), t)
