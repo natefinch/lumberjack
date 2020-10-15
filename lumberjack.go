@@ -1,5 +1,8 @@
 // Package lumberjack provides a rolling logger.
 //
+// Replacement of natefinch/lumberjack.v2 motivated by
+// chown operation not allowed errors on linux by root owned process.
+//
 // Note that this is v2.0 of lumberjack, and should be imported using gopkg.in
 // thusly:
 //
