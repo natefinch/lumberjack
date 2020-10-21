@@ -48,11 +48,11 @@ func TestMaintainMode(t *testing.T) {
 
 func TestMaintainOwner(t *testing.T) {
 	fakeFS := newFakeFS()
-	os_Chown = fakeFS.Chown
-	os_Stat = fakeFS.Stat
+	osChown = fakeFS.Chown
+	osStat = fakeFS.Stat
 	defer func() {
-		os_Chown = os.Chown
-		os_Stat = os.Stat
+		osChown = os.Chown
+		osStat = os.Stat
 	}()
 	currentTime = fakeTime
 	dir := makeTempDir("TestMaintainOwner", t)
@@ -98,7 +98,7 @@ func TestCompressMaintainMode(t *testing.T) {
 	f.Close()
 
 	l := &Logger{
-		Compress: true,
+		Compress:   true,
 		Filename:   filename,
 		MaxBackups: 1,
 		MaxSize:    100, // megabytes
@@ -123,7 +123,7 @@ func TestCompressMaintainMode(t *testing.T) {
 	filename2 := backupFile(dir)
 	info, err := os.Stat(filename)
 	isNil(err, t)
-	info2, err := os.Stat(filename2+compressSuffix)
+	info2, err := os.Stat(filename2 + compressSuffix)
 	isNil(err, t)
 	equals(mode, info.Mode(), t)
 	equals(mode, info2.Mode(), t)
@@ -131,11 +131,11 @@ func TestCompressMaintainMode(t *testing.T) {
 
 func TestCompressMaintainOwner(t *testing.T) {
 	fakeFS := newFakeFS()
-	os_Chown = fakeFS.Chown
-	os_Stat = fakeFS.Stat
+	osChown = fakeFS.Chown
+	osStat = fakeFS.Stat
 	defer func() {
-		os_Chown = os.Chown
-		os_Stat = os.Stat
+		osChown = os.Chown
+		osStat = os.Stat
 	}()
 	currentTime = fakeTime
 	dir := makeTempDir("TestCompressMaintainOwner", t)
