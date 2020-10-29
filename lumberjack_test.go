@@ -127,6 +127,36 @@ func TestDefaultFilename(t *testing.T) {
 	existsWithContent(filename, b, t)
 }
 
+func TestRollingInterval(t *testing.T) {
+	currentTime = fakeTime
+	bCount := 0
+	dir := makeTempDir("RollingInterval", t)
+	defer os.RemoveAll(dir)
+	filename := logFile(dir)
+	l := &Logger{
+		Filename:        filename,
+		MaxSize:         100,
+		RollingInterval: 2,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	allBytes := append(b, b...)
+	for i := 0; i < 2; i++ {
+		n, err := l.Write(b)
+		isNil(err, t)
+		bCount += n
+	}
+	equals(len(allBytes), bCount, t)
+	existsWithContent(filename, allBytes, t)
+	fileCount(dir, 1, t)
+	l.createdAt = l.createdAt - 2
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+	existsWithContent(l.filename(), b, t)
+	fileCount(dir, 2, t)
+}
+
 func TestAutoRotate(t *testing.T) {
 	currentTime = fakeTime
 	megabyte = 1
