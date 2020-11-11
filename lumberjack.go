@@ -273,7 +273,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 		return fmt.Errorf("error getting log file info: %s", err)
 	}
 
-	if info.Size()+int64(writeLen) >= l.max() {
+	if info.Size()+int64(writeLen) > l.max() {
 		return l.rotate()
 	}
 
