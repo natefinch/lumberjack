@@ -51,6 +51,10 @@ type Logger struct {
     // os.TempDir() if empty.
     Filename string `json:"filename" yaml:"filename"`
 
+    // TimeFormat is the time.Time format in backup file names.
+    // It defaults to "2006-01-02T15-04-05.000"
+    TimeFormat string `json:"time_format" yaml:"time_format"`
+
     // MaxSize is the maximum size in megabytes of the log file before it gets
     // rotated. It defaults to 100 megabytes.
     MaxSize int `json:"maxsize" yaml:"maxsize"`
@@ -95,7 +99,7 @@ file.
 Backups use the log file name given to Logger, in the form `name-timestamp.ext`
 where name is the filename without the extension, timestamp is the time at which
 the log was rotated formatted with the time.Time format of
-`2006-01-02T15-04-05.000` and the extension is the original extension.  For
+`2006-01-02T15-04-05.000` and the extension is the original extension. You can set your own time format (see the TimeFormat parameter). For
 example, if your Logger.Filename is `/var/log/foo/server.log`, a backup created
 at 6:30pm on Nov 11 2016 would use the filename
 `/var/log/foo/server-2016-11-04T18-30-00.000.log`
