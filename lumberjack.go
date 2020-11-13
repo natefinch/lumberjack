@@ -36,9 +36,9 @@ import (
 )
 
 const (
-	backupTimeFormat = "2006-01-02T15-04-05.000"
-	compressSuffix   = ".gz"
-	defaultMaxSize   = 100
+	defaultTimeFormat = "2006-01-02T15-04-05.000"
+	compressSuffix    = ".gz"
+	defaultMaxSize    = 100
 )
 
 // ensure we always implement io.WriteCloser
@@ -81,6 +81,10 @@ type Logger struct {
 	// in the same directory.  It uses <processname>-lumberjack.log in
 	// os.TempDir() if empty.
 	Filename string `json:"filename" yaml:"filename"`
+
+	// TimeFormat is the time.Time format in backup file names.
+	// It defaults to "2006-01-02T15-04-05.000"
+	TimeFormat string `json:"time_format" yaml:"time_format"`
 
 	// MaxSize is the maximum size in megabytes of the log file before it gets
 	// rotated. It defaults to 100 megabytes.
@@ -218,7 +222,7 @@ func (l *Logger) openNew() error {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
-		newname := backupName(name, l.LocalTime)
+		newname := backupName(name, l.TimeFormat, l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
 			return fmt.Errorf("can't rename log file: %s", err)
 		}
@@ -244,7 +248,7 @@ func (l *Logger) openNew() error {
 // backupName creates a new filename from the given name, inserting a timestamp
 // between the filename and the extension, using the local time if requested
 // (otherwise UTC).
-func backupName(name string, local bool) string {
+func backupName(name, timeFormat string, local bool) string {
 	dir := filepath.Dir(name)
 	filename := filepath.Base(name)
 	ext := filepath.Ext(filename)
@@ -254,7 +258,12 @@ func backupName(name string, local bool) string {
 		t = t.UTC()
 	}
 
-	timestamp := t.Format(backupTimeFormat)
+	format := defaultTimeFormat
+	if timeFormat != "" {
+		format = timeFormat
+	}
+
+	timestamp := t.Format(format)
 	return filepath.Join(dir, fmt.Sprintf("%s-%s%s", prefix, timestamp, ext))
 }
 
@@ -438,7 +447,13 @@ func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 		return time.Time{}, errors.New("mismatched extension")
 	}
 	ts := filename[len(prefix) : len(filename)-len(ext)]
-	return time.Parse(backupTimeFormat, ts)
+
+	format := defaultTimeFormat
+	if l.TimeFormat != "" {
+		format = l.TimeFormat
+	}
+
+	return time.Parse(format, ts)
 }
 
 // max returns the maximum size in bytes of log files before rolling.
