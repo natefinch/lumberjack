@@ -147,6 +147,18 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 		if err = l.openExistingOrNew(len(p)); err != nil {
 			return 0, err
 		}
+	} else {
+		filename := l.filename()
+		_, err := os_Stat(filename)
+		if os.IsNotExist(err) {
+			err = l.openNew()
+			if err != nil {
+				return 0, fmt.Errorf("error opening new log file instead of deleted: %s", err)
+			}
+		}
+		if err != nil {
+			return 0, fmt.Errorf("error getting log file info: %s", err)
+		}
 	}
 
 	if l.size+writeLen > l.max() {
