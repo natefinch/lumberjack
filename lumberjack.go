@@ -132,7 +132,7 @@ var (
 	currentTime = time.Now
 
 	// os_Stat exists so it can be mocked out by tests.
-	os_Stat = os.Stat
+	osStat = os.Stat
 
 	// megabyte is the conversion factor between MaxSize and bytes.  It is a
 	// variable so tests can mock it out and not need to write megabytes of data
@@ -225,7 +225,7 @@ func (l *Logger) openNew() error {
 
 	name := l.filename()
 	mode := os.FileMode(0600)
-	info, err := os_Stat(name)
+	info, err := osStat(name)
 	if err == nil {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
@@ -295,7 +295,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 	l.mill()
 
 	filename := l.filename()
-	info, err := os_Stat(filename)
+	info, err := osStat(filename)
 	if os.IsNotExist(err) {
 		return l.openNew()
 	}
@@ -407,7 +407,7 @@ func (l *Logger) millRunOnce() error {
 // millRun runs in a goroutine to manage post-rotation compression and removal
 // of old log files.
 func (l *Logger) millRun() {
-	for _ = range l.millCh {
+	for range l.millCh {
 		// what am I going to do, log this?
 		_ = l.millRunOnce()
 	}
@@ -503,7 +503,7 @@ func compressLogFile(src, dst string) (err error) {
 	}
 	defer f.Close()
 
-	fi, err := os_Stat(src)
+	fi, err := osStat(src)
 	if err != nil {
 		return fmt.Errorf("failed to stat log file: %v", err)
 	}
