@@ -143,7 +143,9 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 		)
 	}
 
-	if l.file == nil {
+	//create file when 1)init 2)file does not exist
+	_, err = osStat(l.filename())
+	if l.file == nil || os.IsNotExist(err) {
 		if err = l.openExistingOrNew(len(p)); err != nil {
 			return 0, err
 		}
