@@ -3,10 +3,10 @@
 // Note that this is v2.0 of lumberjack, and should be imported using gopkg.in
 // thusly:
 //
-//   import "gopkg.in/natefinch/lumberjack.v2"
+//   import "github.com/thalesfsp/lumberjack/v3"
 //
 // The package name remains simply lumberjack, and the code resides at
-// https://github.com/natefinch/lumberjack under the v2.0 branch.
+// https://github.com/thalesfsp/lumberjack under the v3.0 branch.
 //
 // Lumberjack is intended to be one part of a logging infrastructure.
 // It is not an all-in-one solution, but instead is a pluggable
@@ -47,8 +47,8 @@ var _ io.WriteCloser = (*Logger)(nil)
 // Logger is an io.WriteCloser that writes to the specified filename.
 //
 // Logger opens or creates the logfile on first Write.  If the file exists and
-// is less than MaxSize megabytes, lumberjack will open and append to that file.
-// If the file exists and its size is >= MaxSize megabytes, the file is renamed
+// is less than MaxBytes, lumberjack will open and append to that file.
+// If the file exists and its size is >= MaxBytes, the file is renamed
 // by putting the current time in a timestamp in the name immediately before the
 // file's extension (or the end of the filename if there's no extension). A new
 // log file is then created using original filename.
@@ -82,6 +82,11 @@ type Logger struct {
 	// os.TempDir() if empty.
 	Filename string `json:"filename" yaml:"filename"`
 
+	// MaxBytes is the maximum size in bytes of the log file before it gets
+	// rotated. It defaults to 104857600 (100 megabytes).
+	MaxBytes int64 `json:"maxbytes" yaml:"maxbytes"`
+
+	// Deprecated: use MaxBytes instead.
 	// MaxSize is the maximum size in megabytes of the log file before it gets
 	// rotated. It defaults to 100 megabytes.
 	MaxSize int `json:"maxsize" yaml:"maxsize"`
@@ -120,7 +125,7 @@ var (
 	currentTime = time.Now
 
 	// os_Stat exists so it can be mocked out by tests.
-	osStat = os.Stat
+	os_Stat = os.Stat
 
 	// megabyte is the conversion factor between MaxSize and bytes.  It is a
 	// variable so tests can mock it out and not need to write megabytes of data
@@ -129,9 +134,9 @@ var (
 )
 
 // Write implements io.Writer.  If a write would cause the log file to be larger
-// than MaxSize, the file is closed, renamed to include a timestamp of the
+// than MaxBytes, the file is closed, renamed to include a timestamp of the
 // current time, and a new log file is created using the original log file name.
-// If the length of the write is greater than MaxSize, an error is returned.
+// If the length of the write is greater than MaxBytes, an error is returned.
 func (l *Logger) Write(p []byte) (n int, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -213,7 +218,7 @@ func (l *Logger) openNew() error {
 
 	name := l.filename()
 	mode := os.FileMode(0600)
-	info, err := osStat(name)
+	info, err := os_Stat(name)
 	if err == nil {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
@@ -259,13 +264,13 @@ func backupName(name string, local bool) string {
 }
 
 // openExistingOrNew opens the logfile if it exists and if the current write
-// would not put it over MaxSize.  If there is no such file or the write would
-// put it over the MaxSize, a new file is created.
+// would not put it over MaxBytes.  If there is no such file or the write would
+// put it over the MaxBytes, a new file is created.
 func (l *Logger) openExistingOrNew(writeLen int) error {
 	l.mill()
 
 	filename := l.filename()
-	info, err := osStat(filename)
+	info, err := os_Stat(filename)
 	if os.IsNotExist(err) {
 		return l.openNew()
 	}
@@ -443,6 +448,9 @@ func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 
 // max returns the maximum size in bytes of log files before rolling.
 func (l *Logger) max() int64 {
+	if l.MaxBytes != 0 {
+		return l.MaxBytes
+	}
 	if l.MaxSize == 0 {
 		return int64(defaultMaxSize * megabyte)
 	}
@@ -472,7 +480,7 @@ func compressLogFile(src, dst string) (err error) {
 	}
 	defer f.Close()
 
-	fi, err := osStat(src)
+	fi, err := os_Stat(src)
 	if err != nil {
 		return fmt.Errorf("failed to stat log file: %v", err)
 	}
