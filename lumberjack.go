@@ -111,8 +111,9 @@ type Logger struct {
 	file *os.File
 	mu   sync.Mutex
 
-	millCh    chan bool
-	startMill sync.Once
+	millCh     chan bool
+	startMill  sync.Once
+	stopMillCh chan bool
 }
 
 var (
@@ -120,7 +121,7 @@ var (
 	currentTime = time.Now
 
 	// os_Stat exists so it can be mocked out by tests.
-	osStat = os.Stat
+	os_Stat = os.Stat
 
 	// megabyte is the conversion factor between MaxSize and bytes.  It is a
 	// variable so tests can mock it out and not need to write megabytes of data
@@ -173,8 +174,11 @@ func (l *Logger) close() error {
 	if l.file == nil {
 		return nil
 	}
+
 	err := l.file.Close()
 	l.file = nil
+
+	l.stopMillCh <- true
 	return err
 }
 
@@ -206,14 +210,14 @@ func (l *Logger) rotate() error {
 // openNew opens a new log file for writing, moving any old log file out of the
 // way.  This methods assumes the file has already been closed.
 func (l *Logger) openNew() error {
-	err := os.MkdirAll(l.dir(), 0755)
+	err := os.MkdirAll(l.dir(), 0744)
 	if err != nil {
 		return fmt.Errorf("can't make directories for new logfile: %s", err)
 	}
 
 	name := l.filename()
-	mode := os.FileMode(0600)
-	info, err := osStat(name)
+	mode := os.FileMode(0644)
+	info, err := os_Stat(name)
 	if err == nil {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
@@ -265,7 +269,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 	l.mill()
 
 	filename := l.filename()
-	info, err := osStat(filename)
+	info, err := os_Stat(filename)
 	if os.IsNotExist(err) {
 		return l.openNew()
 	}
@@ -288,7 +292,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 	return nil
 }
 
-// filename generates the name of the logfile from the current time.
+// genFilename generates the name of the logfile from the current time.
 func (l *Logger) filename() string {
 	if l.Filename != "" {
 		return l.Filename
@@ -376,16 +380,27 @@ func (l *Logger) millRunOnce() error {
 // millRun runs in a goroutine to manage post-rotation compression and removal
 // of old log files.
 func (l *Logger) millRun() {
-	for range l.millCh {
-		// what am I going to do, log this?
-		_ = l.millRunOnce()
+
+	for {
+		select {
+		case <-l.stopMillCh:
+			return
+		case <-l.millCh:
+			_ = l.millRunOnce()
+		}
 	}
+
+	//for _ = range l.millCh {
+	//	// what am I going to do, log this?
+	//	_ = l.millRunOnce()
+	//}
 }
 
 // mill performs post-rotation compression and removal of stale log files,
 // starting the mill goroutine if necessary.
 func (l *Logger) mill() {
 	l.startMill.Do(func() {
+		l.stopMillCh = make(chan bool)
 		l.millCh = make(chan bool, 1)
 		go l.millRun()
 	})
@@ -472,7 +487,7 @@ func compressLogFile(src, dst string) (err error) {
 	}
 	defer f.Close()
 
-	fi, err := osStat(src)
+	fi, err := os_Stat(src)
 	if err != nil {
 		return fmt.Errorf("failed to stat log file: %v", err)
 	}
