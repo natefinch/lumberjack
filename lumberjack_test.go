@@ -30,8 +30,16 @@ func fakeTime() time.Time {
 	return fakeCurrentTime
 }
 
-func TestNewFile(t *testing.T) {
+func mockConsts() {
+	// Overload current time global variable value
 	currentTime = fakeTime
+	// Overload megabyte size global variable value
+	// to test rotation with small data size
+	megabyte = 1
+}
+
+func TestNewFile(t *testing.T) {
+	mockConsts()
 
 	dir := makeTempDir("TestNewFile", t)
 	defer os.RemoveAll(dir)
@@ -48,7 +56,8 @@ func TestNewFile(t *testing.T) {
 }
 
 func TestOpenExisting(t *testing.T) {
-	currentTime = fakeTime
+	mockConsts()
+
 	dir := makeTempDir("TestOpenExisting", t)
 	defer os.RemoveAll(dir)
 
@@ -75,8 +84,8 @@ func TestOpenExisting(t *testing.T) {
 }
 
 func TestWriteTooLong(t *testing.T) {
-	currentTime = fakeTime
-	megabyte = 1
+	mockConsts()
+
 	dir := makeTempDir("TestWriteTooLong", t)
 	defer os.RemoveAll(dir)
 	l := &Logger{
@@ -95,7 +104,8 @@ func TestWriteTooLong(t *testing.T) {
 }
 
 func TestMakeLogDir(t *testing.T) {
-	currentTime = fakeTime
+	mockConsts()
+
 	dir := time.Now().Format("TestMakeLogDir" + backupTimeFormat)
 	dir = filepath.Join(os.TempDir(), dir)
 	defer os.RemoveAll(dir)
@@ -113,7 +123,8 @@ func TestMakeLogDir(t *testing.T) {
 }
 
 func TestDefaultFilename(t *testing.T) {
-	currentTime = fakeTime
+	mockConsts()
+
 	dir := os.TempDir()
 	filename := filepath.Join(dir, filepath.Base(os.Args[0])+"-lumberjack.log")
 	defer os.Remove(filename)
@@ -128,8 +139,7 @@ func TestDefaultFilename(t *testing.T) {
 }
 
 func TestAutoRotate(t *testing.T) {
-	currentTime = fakeTime
-	megabyte = 1
+	mockConsts()
 
 	dir := makeTempDir("TestAutoRotate", t)
 	defer os.RemoveAll(dir)
@@ -165,9 +175,51 @@ func TestAutoRotate(t *testing.T) {
 	fileCount(dir, 2, t)
 }
 
+func TestEverydayRotate(t *testing.T) {
+	mockConsts()
+
+	dir := makeTempDir("TestEverydayRotate", t)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	l := &Logger{
+		Filename:       filename,
+		RotateEveryday: true,
+		MaxSize:        100,
+	}
+	defer l.Close()
+
+	// Write frst log
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	// Check that we have only 1 file
+	existsWithContent(filename, b, t)
+	fileCount(dir, 1, t)
+
+	// Tick time
+	newFakeTime()
+
+	b2 := []byte("foooooo!")
+	n, err = l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+
+	// the old logfile should be moved aside and the main logfile should have
+	// only the last write in it.
+	existsWithContent(filename, b2, t)
+
+	// the backup file will use the current fake time and have the old contents.
+	existsWithContent(backupFile(dir), b, t)
+
+	fileCount(dir, 2, t)
+}
+
 func TestFirstWriteRotate(t *testing.T) {
-	currentTime = fakeTime
-	megabyte = 1
+	mockConsts()
+
 	dir := makeTempDir("TestFirstWriteRotate", t)
 	defer os.RemoveAll(dir)
 
@@ -197,8 +249,8 @@ func TestFirstWriteRotate(t *testing.T) {
 }
 
 func TestMaxBackups(t *testing.T) {
-	currentTime = fakeTime
-	megabyte = 1
+	mockConsts()
+
 	dir := makeTempDir("TestMaxBackups", t)
 	defer os.RemoveAll(dir)
 
@@ -325,8 +377,7 @@ func TestCleanupExistingBackups(t *testing.T) {
 	// test that if we start with more backup files than we're supposed to have
 	// in total, that extra ones get cleaned up when we rotate.
 
-	currentTime = fakeTime
-	megabyte = 1
+	mockConsts()
 
 	dir := makeTempDir("TestCleanupExistingBackups", t)
 	defer os.RemoveAll(dir)
@@ -378,8 +429,7 @@ func TestCleanupExistingBackups(t *testing.T) {
 }
 
 func TestMaxAge(t *testing.T) {
-	currentTime = fakeTime
-	megabyte = 1
+	mockConsts()
 
 	dir := makeTempDir("TestMaxAge", t)
 	defer os.RemoveAll(dir)
@@ -445,8 +495,7 @@ func TestMaxAge(t *testing.T) {
 }
 
 func TestOldLogFiles(t *testing.T) {
-	currentTime = fakeTime
-	megabyte = 1
+	mockConsts()
 
 	dir := makeTempDir("TestOldLogFiles", t)
 	defer os.RemoveAll(dir)
@@ -507,8 +556,7 @@ func TestTimeFromName(t *testing.T) {
 }
 
 func TestLocalTime(t *testing.T) {
-	currentTime = fakeTime
-	megabyte = 1
+	mockConsts()
 
 	dir := makeTempDir("TestLocalTime", t)
 	defer os.RemoveAll(dir)
@@ -534,7 +582,8 @@ func TestLocalTime(t *testing.T) {
 }
 
 func TestRotate(t *testing.T) {
-	currentTime = fakeTime
+	mockConsts()
+
 	dir := makeTempDir("TestRotate", t)
 	defer os.RemoveAll(dir)
 
@@ -591,8 +640,7 @@ func TestRotate(t *testing.T) {
 }
 
 func TestCompressOnRotate(t *testing.T) {
-	currentTime = fakeTime
-	megabyte = 1
+	mockConsts()
 
 	dir := makeTempDir("TestCompressOnRotate", t)
 	defer os.RemoveAll(dir)
@@ -640,8 +688,7 @@ func TestCompressOnRotate(t *testing.T) {
 }
 
 func TestCompressOnResume(t *testing.T) {
-	currentTime = fakeTime
-	megabyte = 1
+	mockConsts()
 
 	dir := makeTempDir("TestCompressOnResume", t)
 	defer os.RemoveAll(dir)
