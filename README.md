@@ -1,16 +1,16 @@
-# lumberjack  [![GoDoc](https://godoc.org/gopkg.in/iakrevetkho/lumberjack.v2?status.png)](https://godoc.org/gopkg.in/iakrevetkho/lumberjack.v2) [![Build Status](https://travis-ci.org/iakrevetkho/lumberjack.svg?branch=v2.0)](https://travis-ci.org/iakrevetkho/lumberjack) [![Build status](https://ci.appveyor.com/api/projects/status/00gchpxtg4gkrt5d)](https://ci.appveyor.com/project/iakrevetkho/lumberjack) [![Coverage Status](https://coveralls.io/repos/iakrevetkho/lumberjack/badge.svg?branch=v2.0)](https://coveralls.io/r/iakrevetkho/lumberjack?branch=v2.0)
+# lumberjack  [![GoDoc](https://godoc.org/gopkg.in/iakrevetkho/lumberjack?status.png)](https://godoc.org/gopkg.in/iakrevetkho/lumberjack) [![Build Status](https://travis-ci.org/iakrevetkho/lumberjack.svg?branch=v2.1.0)](https://travis-ci.org/iakrevetkho/lumberjack) [![Build status](https://ci.appveyor.com/api/projects/status/00gchpxtg4gkrt5d)](https://ci.appveyor.com/project/iakrevetkho/lumberjack) [![Coverage Status](https://coveralls.io/repos/iakrevetkho/lumberjack/badge.svg?branch=v2.1.0)](https://coveralls.io/r/iakrevetkho/lumberjack?branch=v2.1.0)
 
 ### Lumberjack is a Go package for writing logs to rolling files.
 
 Package lumberjack provides a rolling logger.
 
-Note that this is v2.0 of lumberjack, and should be imported using gopkg.in
+Note that this is v2.1.0 of lumberjack, and should be imported using gopkg.in
 thusly:
 
-    import "gopkg.in/iakrevetkho/lumberjack.v2"
+    import "gopkg.in/iakrevetkho/lumberjack"
 
 The package name remains simply lumberjack, and the code resides at
-https://github.com/iakrevetkho/lumberjack under the v2.0 branch.
+https://github.com/iakrevetkho/lumberjack under the v2.1.0 branch.
 
 Lumberjack is intended to be one part of a logging infrastructure.
 It is not an all-in-one solution, but instead is a pluggable
@@ -52,8 +52,8 @@ type Logger struct {
     // os.TempDir() if empty.
     Filename string `json:"filename" yaml:"filename"`
 
-	// RotateEveryday is flag which told lumberjack to rotate file every day at 00:00.
-	RotateEveryday bool `json:"RotateEveryday" yaml:"rotateeveryday"`
+    // RotateEveryday is flag which told lumberjack to rotate file every day at 00:00.
+    RotateEveryday bool `json:"RotateEveryday" yaml:"rotateeveryday"`
 
     // MaxSize is the maximum size in megabytes of the log file before it gets
     // rotated. It defaults to 100 megabytes.
