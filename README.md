@@ -57,6 +57,9 @@ type Logger struct {
     // os.TempDir() if empty.
     Filename string `json:"filename" yaml:"filename"`
 
+	// RotateEveryday is flag which told lumberjack to rotate file every day at 00:00.
+	RotateEveryday bool `json:"RotateEveryday" yaml:"rotateeveryday"`
+
     // MaxSize is the maximum size in megabytes of the log file before it gets
     // rotated. It defaults to 100 megabytes.
     MaxSize int `json:"maxsize" yaml:"maxsize"`
