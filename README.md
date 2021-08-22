@@ -34,6 +34,7 @@ Code:
 ```go
 log.SetOutput(&lumberjack.Logger{
     Filename:   "/var/log/myapp/foo.log",
+    RotateEveryday: true,
     MaxSize:    500, // megabytes
     MaxBackups: 3,
     MaxAge:     28, //days
@@ -50,6 +51,9 @@ type Logger struct {
     // in the same directory.  It uses <processname>-lumberjack.log in
     // os.TempDir() if empty.
     Filename string `json:"filename" yaml:"filename"`
+
+	// RotateEveryday is flag which told lumberjack to rotate file every day at 00:00.
+	RotateEveryday bool `json:"RotateEveryday" yaml:"rotateeveryday"`
 
     // MaxSize is the maximum size in megabytes of the log file before it gets
     // rotated. It defaults to 100 megabytes.
