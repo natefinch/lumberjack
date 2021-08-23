@@ -1,6 +1,6 @@
 // +build linux
 
-package lumberjack
+package woodpecker
 
 import (
 	"log"

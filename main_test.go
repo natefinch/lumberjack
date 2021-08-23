@@ -1,4 +1,4 @@
-package lumberjack
+package woodpecker
 
 import (
 	"bytes"
@@ -126,7 +126,7 @@ func TestDefaultFilename(t *testing.T) {
 	mockConsts()
 
 	dir := os.TempDir()
-	filename := filepath.Join(dir, filepath.Base(os.Args[0])+"-lumberjack.log")
+	filename := filepath.Join(dir, filepath.Base(os.Args[0])+"-woodpecker.log")
 	defer os.Remove(filename)
 	l := &Logger{}
 	defer l.Close()
