@@ -30,11 +30,17 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jinzhu/configor"
 )
 
 const (
-	backupTimeFormat = "2006-01-02T15-04-05.000"
-	compressSuffix   = ".gz"
+	BackupTimeFormat = "2006-01-02T15-04-05.000"
+	CompressSuffix   = ".gz"
+)
+
+const (
+	megabyteSize = 1024 * 1024
 )
 
 // ensure we always implement io.WriteCloser
@@ -73,7 +79,7 @@ var _ io.WriteCloser = (*Logger)(nil)
 //
 // If MaxBackups and MaxAge are both 0, no old log files will be deleted.
 type Logger struct {
-	Cfg Config
+	cfg Config
 
 	size int
 	file *os.File
@@ -84,6 +90,13 @@ type Logger struct {
 	prevDate  *time.Time
 }
 
+func New(cfg Config) *Logger {
+	logger := new(Logger)
+	logger.cfg = cfg
+	configor.Load(&logger.cfg)
+	return logger
+}
+
 // Write implements io.Writer.  If a write would cause the log file to be larger
 // than MaxSize, the file is closed, renamed to include a timestamp of the
 // current time, and a new log file is created using the original log file name.
@@ -92,9 +105,10 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	maxSizeInBytes := l.cfg.MaxSizeInMb * megabyteSize
 	writeLen := len(p)
-	if writeLen > l.Cfg.MaxSizeInMb {
-		return 0, fmt.Errorf("write length %d exceeds maximum file size %d", writeLen, l.Cfg.MaxSizeInMb)
+	if writeLen > maxSizeInBytes {
+		return 0, fmt.Errorf("write length %d exceeds maximum file size %d", writeLen, maxSizeInBytes)
 	}
 
 	if l.file == nil {
@@ -103,13 +117,13 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 		}
 	}
 
-	if l.size+writeLen > l.Cfg.MaxSizeInMb {
+	if l.size+writeLen > maxSizeInBytes {
 		if err := l.rotate(); err != nil {
 			return 0, err
 		}
 	}
 
-	if l.Cfg.RotateEveryday {
+	if l.cfg.RotateEveryday {
 		if err := l.rotateEveryday(); err != nil {
 			return 0, err
 		}
@@ -171,7 +185,7 @@ func (l *Logger) openNew() error {
 		return fmt.Errorf("can't make directories for new logfile: %s", err)
 	}
 
-	name := l.Cfg.Filename
+	name := l.cfg.Filename
 	mode := os.FileMode(0600)
 	info, err := os.Stat(name)
 	if err == nil {
@@ -210,7 +224,7 @@ func (l *Logger) backupName(name string) string {
 	ext := filepath.Ext(filename)
 	prefix := filename[:len(filename)-len(ext)]
 	t := l.getCurrentTime()
-	timestamp := t.Format(backupTimeFormat)
+	timestamp := t.Format(BackupTimeFormat)
 	return filepath.Join(dir, fmt.Sprintf("%s-%s%s", prefix, timestamp, ext))
 }
 
@@ -220,7 +234,7 @@ func (l *Logger) backupName(name string) string {
 func (l *Logger) openExistingOrNew(writeLen int) error {
 	l.mill()
 
-	filename := l.Cfg.Filename
+	filename := l.cfg.Filename
 	info, err := os.Stat(filename)
 	if os.IsNotExist(err) {
 		return l.openNew()
@@ -229,7 +243,8 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 		return fmt.Errorf("error getting log file info: %s", err)
 	}
 
-	if int(info.Size())+writeLen >= l.Cfg.MaxSizeInMb {
+	maxSizeInBytes := l.cfg.MaxSizeInMb * megabyteSize
+	if int(info.Size())+writeLen >= maxSizeInBytes {
 		return l.rotate()
 	}
 
@@ -249,7 +264,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 // files are removed, keeping at most l.MaxBackups files, as long as
 // none of them are older than MaxAge.
 func (l *Logger) millRunOnce() error {
-	if l.Cfg.MaxBackups == 0 && l.Cfg.MaxAgeInDays == 0 && !l.Cfg.Compress {
+	if l.cfg.MaxBackups == 0 && l.cfg.MaxAgeInDays == 0 && !l.cfg.Compress {
 		return nil
 	}
 
@@ -260,16 +275,16 @@ func (l *Logger) millRunOnce() error {
 
 	var compress, remove []logInfo
 
-	if l.Cfg.MaxBackups > 0 && l.Cfg.MaxBackups < len(files) {
+	if l.cfg.MaxBackups > 0 && l.cfg.MaxBackups < len(files) {
 		preserved := make(map[string]bool)
 		var remaining []logInfo
 		for _, f := range files {
 			// Only count the uncompressed log file or the
 			// compressed log file, not both.
-			fileName := strings.TrimSuffix(f.Name(), compressSuffix)
+			fileName := strings.TrimSuffix(f.Name(), CompressSuffix)
 			preserved[fileName] = true
 
-			if len(preserved) > l.Cfg.MaxBackups {
+			if len(preserved) > l.cfg.MaxBackups {
 				remove = append(remove, f)
 			} else {
 				remaining = append(remaining, f)
@@ -277,8 +292,8 @@ func (l *Logger) millRunOnce() error {
 		}
 		files = remaining
 	}
-	if l.Cfg.MaxAgeInDays > 0 {
-		diff := time.Duration(int64(24*time.Hour) * int64(l.Cfg.MaxAgeInDays))
+	if l.cfg.MaxAgeInDays > 0 {
+		diff := time.Duration(int64(24*time.Hour) * int64(l.cfg.MaxAgeInDays))
 		cutoff := l.getCurrentTime().Add(-1 * diff)
 
 		var remaining []logInfo
@@ -292,9 +307,9 @@ func (l *Logger) millRunOnce() error {
 		files = remaining
 	}
 
-	if l.Cfg.Compress {
+	if l.cfg.Compress {
 		for _, f := range files {
-			if !strings.HasSuffix(f.Name(), compressSuffix) {
+			if !strings.HasSuffix(f.Name(), CompressSuffix) {
 				compress = append(compress, f)
 			}
 		}
@@ -308,7 +323,7 @@ func (l *Logger) millRunOnce() error {
 	}
 	for _, f := range compress {
 		fn := filepath.Join(l.dir(), f.Name())
-		errCompress := compressLogFile(fn, fn+compressSuffix)
+		errCompress := compressLogFile(fn, fn+CompressSuffix)
 		if err == nil && errCompress != nil {
 			err = errCompress
 		}
@@ -358,7 +373,7 @@ func (l *Logger) oldLogFiles() ([]logInfo, error) {
 			logFiles = append(logFiles, logInfo{t, f})
 			continue
 		}
-		if t, err := l.timeFromName(f.Name(), prefix, ext+compressSuffix); err == nil {
+		if t, err := l.timeFromName(f.Name(), prefix, ext+CompressSuffix); err == nil {
 			logFiles = append(logFiles, logInfo{t, f})
 			continue
 		}
@@ -382,18 +397,18 @@ func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 		return time.Time{}, errors.New("mismatched extension")
 	}
 	ts := filename[len(prefix) : len(filename)-len(ext)]
-	return time.Parse(backupTimeFormat, ts)
+	return time.Parse(BackupTimeFormat, ts)
 }
 
 // dir returns the directory for the current filename.
 func (l *Logger) dir() string {
-	return filepath.Dir(l.Cfg.Filename)
+	return filepath.Dir(l.cfg.Filename)
 }
 
 // prefixAndExt returns the filename part and extension part from the Logger's
 // filename.
 func (l *Logger) prefixAndExt() (prefix, ext string) {
-	filename := filepath.Base(l.Cfg.Filename)
+	filename := filepath.Base(l.cfg.Filename)
 	ext = filepath.Ext(filename)
 	prefix = filename[:len(filename)-len(ext)] + "-"
 	return prefix, ext
@@ -401,7 +416,7 @@ func (l *Logger) prefixAndExt() (prefix, ext string) {
 
 // getCurrentTime returns current time depending on local time flag configuration
 func (l *Logger) getCurrentTime() time.Time {
-	if l.Cfg.LocalTime {
+	if l.cfg.LocalTime {
 		return time.Now()
 	} else {
 		return time.Now().UTC()

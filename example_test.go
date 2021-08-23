@@ -8,10 +8,13 @@ import (
 // the SetOutput function when your application starts.
 func Example() {
 	log.SetOutput(&Logger{
-		Filename:   "/var/log/myapp/foo.log",
-		MaxSize:    500, // megabytes
-		MaxBackups: 3,
-		MaxAge:     28,   // days
-		Compress:   true, // disabled by default
+		cfg: Config{
+			Filename:       "/var/log/myapp/foo.log",
+			RotateEveryday: true,
+			MaxSizeInMb:    500, // megabytes
+			MaxBackups:     3,
+			MaxAgeInDays:   28,   // days
+			Compress:       true, // disabled by default
+		},
 	})
 }
