@@ -1,4 +1,4 @@
-module github.com/iakrevetkho/lumberjack
+module github.com/iakrevetkho/woodpecker
 
 require (
 	github.com/BurntSushi/toml v0.3.1
