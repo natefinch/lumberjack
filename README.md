@@ -1,38 +1,41 @@
-# lumberjack  [![GoDoc](https://godoc.org/gopkg.in/iakrevetkho/lumberjack?status.png)](https://godoc.org/gopkg.in/iakrevetkho/lumberjack) [![Build Status](https://travis-ci.org/iakrevetkho/lumberjack.svg?branch=v2.1.0)](https://travis-ci.org/iakrevetkho/lumberjack) [![Build status](https://ci.appveyor.com/api/projects/status/00gchpxtg4gkrt5d)](https://ci.appveyor.com/project/iakrevetkho/lumberjack) [![Coverage Status](https://coveralls.io/repos/iakrevetkho/lumberjack/badge.svg?branch=v2.1.0)](https://coveralls.io/r/iakrevetkho/lumberjack?branch=v2.1.0)
+# woodpecker
+[![GoDoc](https://godoc.org/gopkg.in/iakrevetkho/woodpecker?status.png)](https://godoc.org/gopkg.in/iakrevetkho/woodpecker)
 
-### Lumberjack is a Go package for writing logs to rolling files.
+This is fork of the [lumberjack](https://github.com/natefinch/lumberjack)
 
-Package lumberjack provides a rolling logger.
+### woodpecker is a Go package for writing logs to rolling files.
 
-Note that this is v2.1.0 of lumberjack, and should be imported using gopkg.in
+Package woodpecker provides a rolling logger.
+
+Note that this is v2.1.0 of woodpecker, and should be imported using gopkg.in
 thusly:
 
-    import "gopkg.in/iakrevetkho/lumberjack"
+    import "gopkg.in/iakrevetkho/woodpecker"
 
-The package name remains simply lumberjack, and the code resides at
-https://github.com/iakrevetkho/lumberjack under the v2.1.0 branch.
+The package name remains simply woodpecker, and the code resides at
+https://github.com/iakrevetkho/woodpecker under the v2.1.0 branch.
 
-Lumberjack is intended to be one part of a logging infrastructure.
+woodpecker is intended to be one part of a logging infrastructure.
 It is not an all-in-one solution, but instead is a pluggable
 component at the bottom of the logging stack that simply controls the files
 to which logs are written.
 
-Lumberjack plays well with any logging package that can write to an
+woodpecker plays well with any logging package that can write to an
 io.Writer, including the standard library's log package.
 
-Lumberjack assumes that only one process is writing to the output files.
-Using the same lumberjack configuration from multiple processes on the same
+woodpecker assumes that only one process is writing to the output files.
+Using the same woodpecker configuration from multiple processes on the same
 machine will result in improper behavior.
 
 
 **Example**
 
-To use lumberjack with the standard library's log package, just pass it into the SetOutput function when your application starts.
+To use woodpecker with the standard library's log package, just pass it into the SetOutput function when your application starts.
 
 Code:
 
 ```go
-log.SetOutput(&lumberjack.Logger{
+log.SetOutput(&woodpecker.Logger{
     Filename:   "/var/log/myapp/foo.log",
     RotateEveryday: true,
     MaxSize:    500, // megabytes
@@ -48,11 +51,11 @@ log.SetOutput(&lumberjack.Logger{
 ``` go
 type Logger struct {
     // Filename is the file to write logs to.  Backup log files will be retained
-    // in the same directory.  It uses <processname>-lumberjack.log in
+    // in the same directory.  It uses <processname>-woodpecker.log in
     // os.TempDir() if empty.
     Filename string `json:"filename" yaml:"filename"`
 
-    // RotateEveryday is flag which told lumberjack to rotate file every day at 00:00.
+    // RotateEveryday is flag which told woodpecker to rotate file every day at 00:00.
     RotateEveryday bool `json:"RotateEveryday" yaml:"rotateeveryday"`
 
     // MaxSize is the maximum size in megabytes of the log file before it gets
@@ -85,7 +88,7 @@ type Logger struct {
 Logger is an io.WriteCloser that writes to the specified filename.
 
 Logger opens or creates the logfile on first Write.  If the file exists and
-is less than MaxSize megabytes, lumberjack will open and append to that file.
+is less than MaxSize megabytes, woodpecker will open and append to that file.
 If the file exists and its size is >= MaxSize megabytes, the file is renamed
 by putting the current time in a timestamp in the name immediately before the
 file's extension (or the end of the filename if there's no extension). A new
@@ -149,7 +152,7 @@ Example of how to rotate in response to SIGHUP.
 Code:
 
 ```go
-l := &lumberjack.Logger{}
+l := &woodpecker.Logger{}
 log.SetOutput(l)
 c := make(chan os.Signal, 1)
 signal.Notify(c, syscall.SIGHUP)
