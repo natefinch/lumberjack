@@ -39,8 +39,9 @@ const (
 	CompressSuffix   = ".gz"
 )
 
-const (
+var (
 	megabyteSize = 1024 * 1024
+	currentTime  = time.Now
 )
 
 // ensure we always implement io.WriteCloser
@@ -417,9 +418,9 @@ func (l *Logger) prefixAndExt() (prefix, ext string) {
 // getCurrentTime returns current time depending on local time flag configuration
 func (l *Logger) getCurrentTime() time.Time {
 	if l.cfg.LocalTime {
-		return time.Now()
+		return currentTime()
 	} else {
-		return time.Now().UTC()
+		return currentTime().UTC()
 	}
 }
 

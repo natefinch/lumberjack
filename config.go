@@ -6,7 +6,7 @@ type Config struct {
 	Filename string `default:"log.log"`
 
 	// RotateEveryday is flag which told woodpecker to rotate file every day at 00:00.
-	RotateEveryday bool `default:"true"`
+	RotateEveryday bool `default:"false"`
 
 	// MaxSize is the maximum size in megabytes of the log file before it gets rotated.
 	MaxSizeInMb int `default:"10"`
