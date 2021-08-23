@@ -2,9 +2,6 @@ name: Go
 
 on:
   push:
-    branches-ignore:
-     - master
-     - develop
   pull_request:
     branches:
      - master
