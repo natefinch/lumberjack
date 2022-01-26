@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 package lumberjack
@@ -37,7 +38,7 @@ func TestMaintainMode(t *testing.T) {
 	err = l.Rotate()
 	isNil(err, t)
 
-	filename2 := backupFile(dir)
+	filename2 := backupFile(dir, defaultBackupTimeFormat)
 	info, err := os.Stat(filename)
 	isNil(err, t)
 	info2, err := os.Stat(filename2)
@@ -120,7 +121,7 @@ func TestCompressMaintainMode(t *testing.T) {
 
 	// a compressed version of the log file should now exist with the correct
 	// mode.
-	filename2 := backupFile(dir)
+	filename2 := backupFile(dir, defaultBackupTimeFormat)
 	info, err := os.Stat(filename)
 	isNil(err, t)
 	info2, err := os.Stat(filename2 + compressSuffix)
@@ -170,7 +171,7 @@ func TestCompressMaintainOwner(t *testing.T) {
 
 	// a compressed version of the log file should now exist with the correct
 	// owner.
-	filename2 := backupFile(dir)
+	filename2 := backupFile(dir, defaultBackupTimeFormat)
 	equals(555, fakeFS.files[filename2+compressSuffix].uid, t)
 	equals(666, fakeFS.files[filename2+compressSuffix].gid, t)
 }

@@ -96,7 +96,7 @@ func TestWriteTooLong(t *testing.T) {
 
 func TestMakeLogDir(t *testing.T) {
 	currentTime = fakeTime
-	dir := time.Now().Format("TestMakeLogDir" + backupTimeFormat)
+	dir := time.Now().Format("TestMakeLogDir" + defaultBackupTimeFormat)
 	dir = filepath.Join(os.TempDir(), dir)
 	defer os.RemoveAll(dir)
 	filename := logFile(dir)
@@ -160,7 +160,7 @@ func TestAutoRotate(t *testing.T) {
 	existsWithContent(filename, b2, t)
 
 	// the backup file will use the current fake time and have the old contents.
-	existsWithContent(backupFile(dir), b, t)
+	existsWithContent(backupFile(dir, defaultBackupTimeFormat), b, t)
 
 	fileCount(dir, 2, t)
 }
@@ -191,7 +191,7 @@ func TestFirstWriteRotate(t *testing.T) {
 	equals(len(b), n, t)
 
 	existsWithContent(filename, b, t)
-	existsWithContent(backupFile(dir), start, t)
+	existsWithContent(backupFile(dir, defaultBackupTimeFormat), start, t)
 
 	fileCount(dir, 2, t)
 }
@@ -226,7 +226,7 @@ func TestMaxBackups(t *testing.T) {
 	equals(len(b2), n, t)
 
 	// this will use the new fake time
-	secondFilename := backupFile(dir)
+	secondFilename := backupFile(dir, defaultBackupTimeFormat)
 	existsWithContent(secondFilename, b, t)
 
 	// make sure the old file still exists with the same content.
@@ -243,7 +243,7 @@ func TestMaxBackups(t *testing.T) {
 	equals(len(b3), n, t)
 
 	// this will use the new fake time
-	thirdFilename := backupFile(dir)
+	thirdFilename := backupFile(dir, defaultBackupTimeFormat)
 	existsWithContent(thirdFilename, b2, t)
 
 	existsWithContent(filename, b3, t)
@@ -273,14 +273,14 @@ func TestMaxBackups(t *testing.T) {
 
 	// Make a directory that exactly matches our log file filters... it still
 	// shouldn't get caught by the deletion filter since it's a directory.
-	notlogfiledir := backupFile(dir)
+	notlogfiledir := backupFile(dir, defaultBackupTimeFormat)
 	err = os.Mkdir(notlogfiledir, 0700)
 	isNil(err, t)
 
 	newFakeTime()
 
 	// this will use the new fake time
-	fourthFilename := backupFile(dir)
+	fourthFilename := backupFile(dir, defaultBackupTimeFormat)
 
 	// Create a log file that is/was being compressed - this should
 	// not be counted since both the compressed and the uncompressed
@@ -334,19 +334,19 @@ func TestCleanupExistingBackups(t *testing.T) {
 	// make 3 backup files
 
 	data := []byte("data")
-	backup := backupFile(dir)
+	backup := backupFile(dir, defaultBackupTimeFormat)
 	err := ioutil.WriteFile(backup, data, 0644)
 	isNil(err, t)
 
 	newFakeTime()
 
-	backup = backupFile(dir)
+	backup = backupFile(dir, defaultBackupTimeFormat)
 	err = ioutil.WriteFile(backup+compressSuffix, data, 0644)
 	isNil(err, t)
 
 	newFakeTime()
 
-	backup = backupFile(dir)
+	backup = backupFile(dir, defaultBackupTimeFormat)
 	err = ioutil.WriteFile(backup, data, 0644)
 	isNil(err, t)
 
@@ -406,7 +406,7 @@ func TestMaxAge(t *testing.T) {
 	n, err = l.Write(b2)
 	isNil(err, t)
 	equals(len(b2), n, t)
-	existsWithContent(backupFile(dir), b, t)
+	existsWithContent(backupFile(dir, defaultBackupTimeFormat), b, t)
 
 	// we need to wait a little bit since the files get deleted on a different
 	// goroutine.
@@ -419,7 +419,7 @@ func TestMaxAge(t *testing.T) {
 	existsWithContent(filename, b2, t)
 
 	// we should have deleted the old file due to being too old
-	existsWithContent(backupFile(dir), b, t)
+	existsWithContent(backupFile(dir, defaultBackupTimeFormat), b, t)
 
 	// two days later
 	newFakeTime()
@@ -428,7 +428,7 @@ func TestMaxAge(t *testing.T) {
 	n, err = l.Write(b3)
 	isNil(err, t)
 	equals(len(b3), n, t)
-	existsWithContent(backupFile(dir), b2, t)
+	existsWithContent(backupFile(dir, defaultBackupTimeFormat), b2, t)
 
 	// we need to wait a little bit since the files get deleted on a different
 	// goroutine.
@@ -441,7 +441,7 @@ func TestMaxAge(t *testing.T) {
 	existsWithContent(filename, b3, t)
 
 	// we should have deleted the old file due to being too old
-	existsWithContent(backupFile(dir), b2, t)
+	existsWithContent(backupFile(dir, defaultBackupTimeFormat), b2, t)
 }
 
 func TestOldLogFiles(t *testing.T) {
@@ -458,10 +458,51 @@ func TestOldLogFiles(t *testing.T) {
 
 	// This gives us a time with the same precision as the time we get from the
 	// timestamp in the name.
+	t1, err := time.Parse(defaultBackupTimeFormat, fakeTime().UTC().Format(defaultBackupTimeFormat))
+	isNil(err, t)
+
+	backup := backupFile(dir, defaultBackupTimeFormat)
+	err = ioutil.WriteFile(backup, data, 07)
+	isNil(err, t)
+
+	newFakeTime()
+
+	t2, err := time.Parse(defaultBackupTimeFormat, fakeTime().UTC().Format(defaultBackupTimeFormat))
+	isNil(err, t)
+
+	backup2 := backupFile(dir, defaultBackupTimeFormat)
+	err = ioutil.WriteFile(backup2, data, 07)
+	isNil(err, t)
+
+	l := &Logger{Filename: filename}
+	files, err := l.oldLogFiles()
+	isNil(err, t)
+	equals(2, len(files), t)
+
+	// should be sorted by newest file first, which would be t2
+	equals(t2, files[0].timestamp, t)
+	equals(t1, files[1].timestamp, t)
+}
+
+func TestOldLogFilesCustomTimeFormat(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+	backupTimeFormat := "2006-01-02.150405"
+
+	dir := makeTempDir("TestOldLogFilesCustomTimeFormat", t)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	data := []byte("data")
+	err := ioutil.WriteFile(filename, data, 07)
+	isNil(err, t)
+
+	// This gives us a time with the same precision as the time we get from the
+	// timestamp in the name.
 	t1, err := time.Parse(backupTimeFormat, fakeTime().UTC().Format(backupTimeFormat))
 	isNil(err, t)
 
-	backup := backupFile(dir)
+	backup := backupFile(dir, backupTimeFormat)
 	err = ioutil.WriteFile(backup, data, 07)
 	isNil(err, t)
 
@@ -470,11 +511,11 @@ func TestOldLogFiles(t *testing.T) {
 	t2, err := time.Parse(backupTimeFormat, fakeTime().UTC().Format(backupTimeFormat))
 	isNil(err, t)
 
-	backup2 := backupFile(dir)
+	backup2 := backupFile(dir, backupTimeFormat)
 	err = ioutil.WriteFile(backup2, data, 07)
 	isNil(err, t)
 
-	l := &Logger{Filename: filename}
+	l := &Logger{Filename: filename, BackupTimeFormat: backupTimeFormat}
 	files, err := l.oldLogFiles()
 	isNil(err, t)
 	equals(2, len(files), t)
@@ -530,7 +571,7 @@ func TestLocalTime(t *testing.T) {
 	equals(len(b2), n2, t)
 
 	existsWithContent(logFile(dir), b2, t)
-	existsWithContent(backupFileLocal(dir), b, t)
+	existsWithContent(backupFileLocal(dir, defaultBackupTimeFormat), b, t)
 }
 
 func TestRotate(t *testing.T) {
@@ -563,7 +604,7 @@ func TestRotate(t *testing.T) {
 	// goroutine.
 	<-time.After(10 * time.Millisecond)
 
-	filename2 := backupFile(dir)
+	filename2 := backupFile(dir, defaultBackupTimeFormat)
 	existsWithContent(filename2, b, t)
 	existsWithContent(filename, []byte{}, t)
 	fileCount(dir, 2, t)
@@ -576,7 +617,7 @@ func TestRotate(t *testing.T) {
 	// goroutine.
 	<-time.After(10 * time.Millisecond)
 
-	filename3 := backupFile(dir)
+	filename3 := backupFile(dir, defaultBackupTimeFormat)
 	existsWithContent(filename3, []byte{}, t)
 	existsWithContent(filename, []byte{}, t)
 	fileCount(dir, 2, t)
@@ -633,8 +674,8 @@ func TestCompressOnRotate(t *testing.T) {
 	isNil(err, t)
 	err = gz.Close()
 	isNil(err, t)
-	existsWithContent(backupFile(dir)+compressSuffix, bc.Bytes(), t)
-	notExist(backupFile(dir), t)
+	existsWithContent(backupFile(dir, defaultBackupTimeFormat)+compressSuffix, bc.Bytes(), t)
+	notExist(backupFile(dir, defaultBackupTimeFormat), t)
 
 	fileCount(dir, 2, t)
 }
@@ -655,7 +696,7 @@ func TestCompressOnResume(t *testing.T) {
 	defer l.Close()
 
 	// Create a backup file and empty "compressed" file.
-	filename2 := backupFile(dir)
+	filename2 := backupFile(dir, defaultBackupTimeFormat)
 	b := []byte("foo!")
 	err := ioutil.WriteFile(filename2, b, 0644)
 	isNil(err, t)
@@ -696,7 +737,8 @@ func TestJson(t *testing.T) {
 	"maxage": 10,
 	"maxbackups": 3,
 	"localtime": true,
-	"compress": true
+	"compress": true,
+	"backupTimeFormat": "20060102.15.04.05"
 }`[1:])
 
 	l := Logger{}
@@ -708,6 +750,7 @@ func TestJson(t *testing.T) {
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
 	equals(true, l.Compress, t)
+	equals("20060102.15.04.05", l.BackupTimeFormat, t)
 }
 
 func TestYaml(t *testing.T) {
@@ -717,7 +760,8 @@ maxsize: 5
 maxage: 10
 maxbackups: 3
 localtime: true
-compress: true`[1:])
+compress: true
+backupTimeFormat: 20060102.15.04.05`[1:])
 
 	l := Logger{}
 	err := yaml.Unmarshal(data, &l)
@@ -728,6 +772,7 @@ compress: true`[1:])
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
 	equals(true, l.Compress, t)
+	equals("20060102.15.04.05", l.BackupTimeFormat, t)
 }
 
 func TestToml(t *testing.T) {
@@ -737,7 +782,8 @@ maxsize = 5
 maxage = 10
 maxbackups = 3
 localtime = true
-compress = true`[1:]
+compress = true
+backupTimeFormat = "20060102.15.04.05"`[1:]
 
 	l := Logger{}
 	md, err := toml.Decode(data, &l)
@@ -749,13 +795,14 @@ compress = true`[1:]
 	equals(true, l.LocalTime, t)
 	equals(true, l.Compress, t)
 	equals(0, len(md.Undecoded()), t)
+	equals("20060102.15.04.05", l.BackupTimeFormat, t)
 }
 
 // makeTempDir creates a file with a semi-unique name in the OS temp directory.
 // It should be based on the name of the test, to keep parallel tests from
 // colliding, and must be cleaned up after the test is finished.
 func makeTempDir(name string, t testing.TB) string {
-	dir := time.Now().Format(name + backupTimeFormat)
+	dir := time.Now().Format(name + defaultBackupTimeFormat)
 	dir = filepath.Join(os.TempDir(), dir)
 	isNilUp(os.Mkdir(dir, 0700), t, 1)
 	return dir
@@ -778,17 +825,17 @@ func logFile(dir string) string {
 	return filepath.Join(dir, "foobar.log")
 }
 
-func backupFile(dir string) string {
+func backupFile(dir string, backupTimeFormat string) string {
 	return filepath.Join(dir, "foobar-"+fakeTime().UTC().Format(backupTimeFormat)+".log")
 }
 
-func backupFileLocal(dir string) string {
+func backupFileLocal(dir string, backupTimeFormat string) string {
 	return filepath.Join(dir, "foobar-"+fakeTime().Format(backupTimeFormat)+".log")
 }
 
 // logFileLocal returns the log file name in the given directory for the current
 // fake time using the local timezone.
-func logFileLocal(dir string) string {
+func logFileLocal(dir string, backupTimeFormat string) string {
 	return filepath.Join(dir, fakeTime().Format(backupTimeFormat))
 }
 
