@@ -38,6 +38,7 @@ import (
 const (
 	backupTimeFormat = "2006-01-02T15-04-05.000"
 	compressSuffix   = ".gz"
+	tmpSuffix        = ".tmp"
 	defaultMaxSize   = 100
 )
 
@@ -477,13 +478,17 @@ func compressLogFile(src, dst string) (err error) {
 		return fmt.Errorf("failed to stat log file: %v", err)
 	}
 
-	if err := chown(dst, fi); err != nil {
+	// Use a different filename to write the file, so that anything looking for
+	// "*.gz" only sees the compressed file after it's been finished writing to.
+	tmpDst := dst + tmpSuffix
+
+	if err := chown(tmpDst, fi); err != nil {
 		return fmt.Errorf("failed to chown compressed log file: %v", err)
 	}
 
 	// If this file already exists, we presume it was created by
 	// a previous attempt to compress the log file.
-	gzf, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, fi.Mode())
+	gzf, err := os.OpenFile(tmpDst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, fi.Mode())
 	if err != nil {
 		return fmt.Errorf("failed to open compressed log file: %v", err)
 	}
@@ -493,7 +498,7 @@ func compressLogFile(src, dst string) (err error) {
 
 	defer func() {
 		if err != nil {
-			os.Remove(dst)
+			os.Remove(tmpDst)
 			err = fmt.Errorf("failed to compress log file: %v", err)
 		}
 	}()
@@ -501,16 +506,37 @@ func compressLogFile(src, dst string) (err error) {
 	if _, err := io.Copy(gz, f); err != nil {
 		return err
 	}
+
+	// Flush the gz writer before Sync()ing
+	if err := gz.Flush(); err != nil {
+		return err
+	}
+
+	// fsync is important, otherwise os.Rename could rename a zero-length file
+	if err := gzf.Sync(); err != nil {
+		return err
+	}
+
+	// Close the gzip writer
 	if err := gz.Close(); err != nil {
 		return err
 	}
+
+	// close the underlying gzip file
 	if err := gzf.Close(); err != nil {
 		return err
 	}
 
+	// close the source file we copied from
 	if err := f.Close(); err != nil {
 		return err
 	}
+
+	// Atomically replace the destination file
+	if err := os.Rename(tmpDst, dst); err != nil {
+		return err
+	}
+
 	if err := os.Remove(src); err != nil {
 		return err
 	}
