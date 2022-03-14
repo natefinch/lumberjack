@@ -82,6 +82,10 @@ type Logger struct {
 	// os.TempDir() if empty.
 	Filename string `json:"filename" yaml:"filename"`
 
+	// BackupDirectory is the directory to store logs to. It will store the
+	// backups in the same folder specified by Filename if empty.
+	BackupDirectory string `json:backupdirectory yaml:"backupdirectory"`
+
 	// MaxSize is the maximum size in megabytes of the log file before it gets
 	// rotated. It defaults to 100 megabytes.
 	MaxSize int `json:"maxsize" yaml:"maxsize"`
@@ -218,7 +222,7 @@ func (l *Logger) openNew() error {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
-		newname := backupName(name, l.LocalTime)
+		newname := l.backupName(name, l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
 			return fmt.Errorf("can't rename log file: %s", err)
 		}
@@ -244,8 +248,8 @@ func (l *Logger) openNew() error {
 // backupName creates a new filename from the given name, inserting a timestamp
 // between the filename and the extension, using the local time if requested
 // (otherwise UTC).
-func backupName(name string, local bool) string {
-	dir := filepath.Dir(name)
+func (l *Logger) backupName(name string, local bool) string {
+	dir := l.backupDirectory()
 	filename := filepath.Base(name)
 	ext := filepath.Ext(filename)
 	prefix := filename[:len(filename)-len(ext)]
@@ -295,6 +299,16 @@ func (l *Logger) filename() string {
 	}
 	name := filepath.Base(os.Args[0]) + "-lumberjack.log"
 	return filepath.Join(os.TempDir(), name)
+}
+
+func (l *Logger) backupDirectory() (result string) {
+	if l.BackupDirectory != "" {
+		result = l.BackupDirectory
+	} else {
+		result = filepath.Dir(l.filename())
+	}
+
+	return result
 }
 
 // millRunOnce performs compression and removal of stale log files.
@@ -357,13 +371,13 @@ func (l *Logger) millRunOnce() error {
 	}
 
 	for _, f := range remove {
-		errRemove := os.Remove(filepath.Join(l.dir(), f.Name()))
+		errRemove := os.Remove(filepath.Join(l.backupDirectory(), f.Name()))
 		if err == nil && errRemove != nil {
 			err = errRemove
 		}
 	}
 	for _, f := range compress {
-		fn := filepath.Join(l.dir(), f.Name())
+		fn := filepath.Join(l.backupDirectory(), f.Name())
 		errCompress := compressLogFile(fn, fn+compressSuffix)
 		if err == nil && errCompress != nil {
 			err = errCompress
@@ -398,7 +412,7 @@ func (l *Logger) mill() {
 // oldLogFiles returns the list of backup log files stored in the same
 // directory as the current log file, sorted by ModTime
 func (l *Logger) oldLogFiles() ([]logInfo, error) {
-	files, err := ioutil.ReadDir(l.dir())
+	files, err := ioutil.ReadDir(l.backupDirectory())
 	if err != nil {
 		return nil, fmt.Errorf("can't read log file directory: %s", err)
 	}
