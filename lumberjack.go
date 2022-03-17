@@ -223,8 +223,19 @@ func (l *Logger) openNew() error {
 		mode = info.Mode()
 		// move the existing file
 		newname := l.backupName(name, l.LocalTime)
-		if err := os.Rename(name, newname); err != nil {
-			return fmt.Errorf("can't rename log file: %s", err)
+
+		// If the backup directory is not located on the same partition as the
+		// active log directory, the os.Rename call might fail. Thus, we check if
+		// the active and the backup directories are the same first, and copy the
+		// content of the active log into the backup log if it is not the case.
+		if l.backupDirectory() == l.dir() {
+			if err := os.Rename(name, newname); err != nil {
+				return fmt.Errorf("can't rename log file: %s", err)
+			}
+		} else {
+			if err := moveFile(name, newname); err != nil {
+				return fmt.Errorf("can't move log file: %s", err)
+			}
 		}
 
 		// this is a no-op anywhere but linux
@@ -529,6 +540,33 @@ func compressLogFile(src, dst string) (err error) {
 		return err
 	}
 
+	return nil
+}
+
+// moveFile moves a file from a source to a destination. This function is used when
+// the file is moved from locations in different partitions of the file system.
+func moveFile(sourcePath, destPath string) error {
+	inputFile, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	outputFile, err := os.Create(destPath)
+	if err != nil {
+		_ = inputFile.Close()
+		return err
+	}
+	defer func() { _ = outputFile.Close() }()
+	if _, err = io.Copy(outputFile, inputFile); err != nil {
+		return err
+	}
+	if err = inputFile.Close(); err != nil {
+		return err
+	}
+	// The copy was successful, so now delete the original file
+	err = os.Remove(sourcePath)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
