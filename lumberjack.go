@@ -292,7 +292,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 func (l *Logger) filename() string {
 	if l.Filename != "" {
 		current := time.Now()
-		return l.Filename + fmt.Sprintf("%v-%v-%v-%v", current.Day(), current.Month(), current.Year(), current.Minute()) + ".log"
+		return l.Filename + fmt.Sprintf("%v-%v-%v", current.Day(), current.Month(), current.Year()) + ".log"
 	}
 	name := filepath.Base(os.Args[0]) + "-lumberjack.log"
 	return filepath.Join(os.TempDir(), name)
