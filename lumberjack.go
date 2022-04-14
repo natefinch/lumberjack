@@ -82,6 +82,9 @@ type Logger struct {
 	// os.TempDir() if empty.
 	Filename string `json:"filename" yaml:"filename"`
 
+	// DailyLogging is a mode that use to log day by day
+	DailyLogging bool `json:"dailylogging" yaml:"dailylogging"`
+
 	// MaxSize is the maximum size in megabytes of the log file before it gets
 	// rotated. It defaults to 100 megabytes.
 	MaxSize int `json:"maxsize" yaml:"maxsize"`
@@ -291,8 +294,11 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 // filename generates the name of the logfile from the current time.
 func (l *Logger) filename() string {
 	if l.Filename != "" {
-		current := time.Now()
-		return l.Filename + fmt.Sprintf("%v-%v-%v", current.Day(), current.Month(), current.Year()) + ".log"
+		if l.DailyLogging {
+			current := time.Now()
+			return l.Filename + fmt.Sprintf("%v-%v-%v", current.Day(), current.Month(), current.Year()) + ".log"
+		}
+		return l.Filename
 	}
 	name := filepath.Base(os.Args[0]) + "-lumberjack.log"
 	return filepath.Join(os.TempDir(), name)
