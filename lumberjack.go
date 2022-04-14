@@ -296,7 +296,11 @@ func (l *Logger) filename() string {
 	if l.Filename != "" {
 		if l.DailyLogging {
 			current := time.Now()
-			return l.Filename + fmt.Sprintf("_%v-%v-%v", current.Day(), current.Month(), current.Year()) + ".log"
+			timeString := fmt.Sprintf("_%v-%v-%v", current.Day(), current.Month(), current.Year())
+			if pos := strings.LastIndexByte(l.Filename, '.'); pos != -1 {
+				return l.Filename[:pos] + timeString + l.Filename[pos:]
+			}
+			return l.Filename + timeString + ".log"
 		}
 		return l.Filename
 	}
