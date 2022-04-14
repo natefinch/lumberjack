@@ -291,7 +291,8 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 // filename generates the name of the logfile from the current time.
 func (l *Logger) filename() string {
 	if l.Filename != "" {
-		return l.Filename
+		current := time.Now()
+		return l.Filename + fmt.Sprintf("%v-%v-%v-%v", current.Day(), current.Month(), current.Year(), current.Minute()) + ".log"
 	}
 	name := filepath.Base(os.Args[0]) + "-lumberjack.log"
 	return filepath.Join(os.TempDir(), name)
