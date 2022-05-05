@@ -53,7 +53,7 @@ var _ io.WriteCloser = (*Logger)(nil)
 // file's extension (or the end of the filename if there's no extension). A new
 // log file is then created using original filename.
 //
-// Whenever a write would cause the current log file exceed MaxSize megabytes,
+// Whenever a write would cause the current log file exceed MaxBytes,
 // the current file is closed, renamed, and a new log file created with the
 // original name. Thus, the filename you give Logger is always the "current" log
 // file.
@@ -146,7 +146,7 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 
 	if writeLen > l.max(writeLen) {
 		return 0, fmt.Errorf(
-			"write length %d exceeds maximum file size %d", writeLen, l.max(),
+			"write length %d exceeds maximum file size %d", writeLen, l.max(writeLen),
 		)
 	}
 
