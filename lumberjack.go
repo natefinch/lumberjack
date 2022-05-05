@@ -143,7 +143,8 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 	defer l.mu.Unlock()
 
 	writeLen := int64(len(p))
-	if writeLen > l.max() {
+
+	if writeLen > l.max(writeLen) {
 		return 0, fmt.Errorf(
 			"write length %d exceeds maximum file size %d", writeLen, l.max(),
 		)
@@ -155,7 +156,7 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 		}
 	}
 
-	if l.size+writeLen > l.max() {
+	if l.size+writeLen > l.max(writeLen) {
 		if err := l.rotate(); err != nil {
 			return 0, err
 		}
@@ -279,7 +280,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 		return fmt.Errorf("error getting log file info: %s", err)
 	}
 
-	if info.Size()+int64(writeLen) >= l.max() {
+	if info.Size()+int64(writeLen) >= l.max(int64(writeLen)) {
 		return l.rotate()
 	}
 
@@ -448,8 +449,11 @@ func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 }
 
 // max returns the maximum size in bytes of log files before rolling.
-func (l *Logger) max() int64 {
+func (l *Logger) max(writeLen int64) int64 {
 	if l.MaxBytes != 0 {
+		if l.MaxBytes == -1 {
+			return writeLen + l.size + 1
+		}
 		return l.MaxBytes
 	}
 	if l.MaxSize == 0 {
