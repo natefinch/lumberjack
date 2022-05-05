@@ -47,13 +47,13 @@ var _ io.WriteCloser = (*Logger)(nil)
 // Logger is an io.WriteCloser that writes to the specified filename.
 //
 // Logger opens or creates the logfile on first Write.  If the file exists and
-// is less than MaxSize megabytes, lumberjack will open and append to that file.
-// If the file exists and its size is >= MaxSize megabytes, the file is renamed
+// is less than MaxBytes, lumberjack will open and append to that file.
+// If the file exists and its size is >= MaxBytes, the file is renamed
 // by putting the current time in a timestamp in the name immediately before the
 // file's extension (or the end of the filename if there's no extension). A new
 // log file is then created using original filename.
 //
-// Whenever a write would cause the current log file exceed MaxSize megabytes,
+// Whenever a write would cause the current log file exceed MaxBytes,
 // the current file is closed, renamed, and a new log file created with the
 // original name. Thus, the filename you give Logger is always the "current" log
 // file.
@@ -82,6 +82,12 @@ type Logger struct {
 	// os.TempDir() if empty.
 	Filename string `json:"filename" yaml:"filename"`
 
+	// MaxBytes is the maximum size in bytes of the log file before it gets
+	// rotated. It defaults to 104857600 (100 megabytes).
+	MaxBytes int64 `json:"maxbytes" yaml:"maxbytes"`
+
+	// Deprecated: use MaxBytes instead.
+	// This field is mutually exclusive with the “MaxBytes” field.
 	// MaxSize is the maximum size in megabytes of the log file before it gets
 	// rotated. It defaults to 100 megabytes.
 	MaxSize int `json:"maxsize" yaml:"maxsize"`
@@ -129,17 +135,18 @@ var (
 )
 
 // Write implements io.Writer.  If a write would cause the log file to be larger
-// than MaxSize, the file is closed, renamed to include a timestamp of the
+// than MaxBytes, the file is closed, renamed to include a timestamp of the
 // current time, and a new log file is created using the original log file name.
-// If the length of the write is greater than MaxSize, an error is returned.
+// If the length of the write is greater than MaxBytes, an error is returned.
 func (l *Logger) Write(p []byte) (n int, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	writeLen := int64(len(p))
-	if writeLen > l.max() {
+
+	if writeLen > l.max(writeLen) {
 		return 0, fmt.Errorf(
-			"write length %d exceeds maximum file size %d", writeLen, l.max(),
+			"write length %d exceeds maximum file size %d", writeLen, l.max(writeLen),
 		)
 	}
 
@@ -149,7 +156,7 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 		}
 	}
 
-	if l.size+writeLen > l.max() {
+	if l.size+writeLen > l.max(writeLen) {
 		if err := l.rotate(); err != nil {
 			return 0, err
 		}
@@ -259,8 +266,8 @@ func backupName(name string, local bool) string {
 }
 
 // openExistingOrNew opens the logfile if it exists and if the current write
-// would not put it over MaxSize.  If there is no such file or the write would
-// put it over the MaxSize, a new file is created.
+// would not put it over MaxBytes.  If there is no such file or the write would
+// put it over the MaxBytes, a new file is created.
 func (l *Logger) openExistingOrNew(writeLen int) error {
 	l.mill()
 
@@ -273,7 +280,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 		return fmt.Errorf("error getting log file info: %s", err)
 	}
 
-	if info.Size()+int64(writeLen) >= l.max() {
+	if info.Size()+int64(writeLen) >= l.max(int64(writeLen)) {
 		return l.rotate()
 	}
 
@@ -442,7 +449,13 @@ func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 }
 
 // max returns the maximum size in bytes of log files before rolling.
-func (l *Logger) max() int64 {
+func (l *Logger) max(writeLen int64) int64 {
+	if l.MaxBytes != 0 {
+		if l.MaxBytes == -1 {
+			return writeLen + l.size + 1
+		}
+		return l.MaxBytes
+	}
 	if l.MaxSize == 0 {
 		return int64(defaultMaxSize * megabyte)
 	}
