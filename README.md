@@ -33,11 +33,15 @@ Code:
 
 ```go
 log.SetOutput(&lumberjack.Logger{
-    Filename:   "/var/log/myapp/foo.log",
-    MaxSize:    500, // megabytes
-    MaxBackups: 3,
-    MaxAge:     28, //days
-    Compress:   true, // disabled by default
+    Filename:      "/var/log/myapp/foo.log",
+	FileMode:      "0644", // default 0600
+	ForceMode:     true, // default false
+    TimeFormat:    "2006_01_02_15_04_05",
+    TimeSeparator: "_", // default '-'
+    MaxSize:       500, // megabytes
+    MaxBackups:    3,
+    MaxAge:        28, //days
+    Compress:      true, // disabled by default
 })
 ```
 
@@ -50,10 +54,23 @@ type Logger struct {
     // in the same directory.  It uses <processname>-lumberjack.log in
     // os.TempDir() if empty.
     Filename string `json:"filename" yaml:"filename"`
+    
+    // FileMode is the file mode to use to create a very first log file.
+	// It uses 0600 if empty.
+	FileMode string `json:"filemode" yaml:"filemode"`
+
+	// ForceMode determines whether FileMode should be forcely used for newly
+	// created file on rotation. If true, all the files will be created with
+	// FileMode mode. If false, the mode of the previous file will be used.
+	ForceMode bool `json:"forcemode" yaml:"forcemode"`
 
     // TimeFormat is the time.Time format in backup file names.
     // It defaults to "2006-01-02T15-04-05.000"
     TimeFormat string `json:"time_format" yaml:"time_format"`
+    
+    // TimeSeparator is the separator that is used in backup name between
+	// original name and appended time. It defaults to "-" (hyphen).
+	TimeSeparator string `json:"timeseparator" yaml:"timeseparator"`
 
     // MaxSize is the maximum size in megabytes of the log file before it gets
     // rotated. It defaults to 100 megabytes.

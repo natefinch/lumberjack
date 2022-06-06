@@ -744,10 +744,83 @@ func TestCompressOnResume(t *testing.T) {
 	fileCount(dir, 2, t)
 }
 
+func TestFileMode(t *testing.T) {
+	tests := map[string]struct {
+		mode    string
+		want    os.FileMode
+		wantErr bool
+	}{
+		"default": {"", 0600, false},
+		"custom":  {"0644", 0644, false},
+		"invalid": {"9999", 0, true},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := makeTempDir("TestNewFile", t)
+			defer os.RemoveAll(dir)
+
+			filename := logFile(dir)
+			l := &Logger{
+				Filename: filename,
+				FileMode: test.mode,
+			}
+			defer l.Close()
+
+			b := []byte("boo!")
+			_, err := l.Write(b)
+			equals(err != nil, test.wantErr, t)
+
+			if test.wantErr {
+				notExist(filename, t)
+			} else {
+				existsWithMode(filename, test.want, t)
+			}
+		})
+	}
+}
+
+func TestForceFileMode(t *testing.T) {
+	tests := map[string]struct {
+		forceMode bool
+		want      os.FileMode
+	}{
+		"default": {false, 0666},
+		"force":   {true, 0644},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := makeTempDir("TestNewFile", t)
+			defer os.RemoveAll(dir)
+
+			filename := logFile(dir)
+			l := &Logger{
+				Filename:  filename,
+				FileMode:  "0644",
+				ForceMode: test.forceMode,
+			}
+			defer l.Close()
+
+			f, err := os.OpenFile(filename, os.O_CREATE, 0400)
+			isNil(err, t)
+			f.Chmod(0666)
+			defer f.Close()
+
+			err = l.Rotate()
+			isNil(err, t)
+
+			existsWithMode(filename, test.want, t)
+		})
+	}
+}
+
 func TestJson(t *testing.T) {
 	data := []byte(`
 {
 	"filename": "foo",
+	"filemode": "0644",
+	"forcemode": true,
 	"timeseparator": "_",
 	"maxsize": 5,
 	"maxage": 10,
@@ -760,6 +833,8 @@ func TestJson(t *testing.T) {
 	err := json.Unmarshal(data, &l)
 	isNil(err, t)
 	equals("foo", l.Filename, t)
+	equals("0644", l.FileMode, t)
+	equals(true, l.ForceMode, t)
 	equals("_", l.TimeSeparator, t)
 	equals(5, l.MaxSize, t)
 	equals(10, l.MaxAge, t)
@@ -771,6 +846,8 @@ func TestJson(t *testing.T) {
 func TestYaml(t *testing.T) {
 	data := []byte(`
 filename: foo
+filemode: "0644"
+forcemode: true
 timeseparator: _
 maxsize: 5
 maxage: 10
@@ -782,6 +859,8 @@ compress: true`[1:])
 	err := yaml.Unmarshal(data, &l)
 	isNil(err, t)
 	equals("foo", l.Filename, t)
+	equals("0644", l.FileMode, t)
+	equals(true, l.ForceMode, t)
 	equals("_", l.TimeSeparator, t)
 	equals(5, l.MaxSize, t)
 	equals(10, l.MaxAge, t)
@@ -793,6 +872,8 @@ compress: true`[1:])
 func TestToml(t *testing.T) {
 	data := `
 filename = "foo"
+filemode = "0644"
+forcemode = true
 timeseparator = "_"
 maxsize = 5
 maxage = 10
@@ -804,6 +885,8 @@ compress = true`[1:]
 	md, err := toml.Decode(data, &l)
 	isNil(err, t)
 	equals("foo", l.Filename, t)
+	equals("0644", l.FileMode, t)
+	equals(true, l.ForceMode, t)
 	equals("_", l.TimeSeparator, t)
 	equals(5, l.MaxSize, t)
 	equals(10, l.MaxAge, t)
@@ -819,7 +902,7 @@ compress = true`[1:]
 func makeTempDir(name string, t testing.TB) string {
 	dir := time.Now().Format(name + defaultTimeFormat)
 	dir = filepath.Join(os.TempDir(), dir)
-	isNilUp(os.Mkdir(dir, 0700), t, 1)
+	isNilUp(os.Mkdir(dir, 0777), t, 1)
 	return dir
 }
 
@@ -832,6 +915,13 @@ func existsWithContent(path string, content []byte, t testing.TB) {
 	b, err := ioutil.ReadFile(path)
 	isNilUp(err, t, 1)
 	equalsUp(content, b, t, 1)
+}
+
+// existsWithMode checks that the given file exists and has the correct file mode.
+func existsWithMode(path string, mode os.FileMode, t testing.TB) {
+	info, err := os.Stat(path)
+	isNilUp(err, t, 1)
+	equalsUp(mode, info.Mode(), t, 1)
 }
 
 // logFile returns the log file name in the given directory for the current fake

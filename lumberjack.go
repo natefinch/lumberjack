@@ -30,6 +30,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +41,7 @@ const (
 	defaultTimeSeparator = "-"
 	compressSuffix       = ".gz"
 	defaultMaxSize       = 100
+	defaultFileMode  = 0600
 )
 
 // ensure we always implement io.WriteCloser
@@ -82,6 +84,15 @@ type Logger struct {
 	// in the same directory.  It uses <processname>-lumberjack.log in
 	// os.TempDir() if empty.
 	Filename string `json:"filename" yaml:"filename"`
+
+	// FileMode is the file mode to use to create a very first log file.
+	// It uses 0600 if empty.
+	FileMode string `json:"filemode" yaml:"filemode"`
+
+	// ForceMode determines whether FileMode should be forcely used for newly
+	// created file on rotation. If true, all the files will be created with
+	// FileMode mode. If false, the mode of the previous file will be used.
+	ForceMode bool `json:"forcemode" yaml:"forcemode"`
 
 	// TimeFormat is the time.Time format in backup file names.
 	// It defaults to "2006-01-02T15-04-05.000"
@@ -221,11 +232,17 @@ func (l *Logger) openNew() error {
 	}
 
 	name := l.filename()
-	mode := os.FileMode(0600)
+	mode, err := l.mode()
+	if err != nil {
+		return fmt.Errorf("can't define file mode: %s", err)
+	}
 	info, err := osStat(name)
 	if err == nil {
-		// Copy the mode off the old logfile.
-		mode = info.Mode()
+		// Copy the mode off the old logfile
+		// if configured mode should not be forcely used.
+		if !l.ForceMode {
+			mode = info.Mode()
+		}
 		// move the existing file
 		newname := backupName(name, l.timeSep(), l.timeFormat(), l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
@@ -245,6 +262,17 @@ func (l *Logger) openNew() error {
 	if err != nil {
 		return fmt.Errorf("can't open new logfile: %s", err)
 	}
+
+	stat, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("can't stat new logfile: %s", err)
+	}
+	if stat.Mode() != mode {
+		if err = f.Chmod(mode); err != nil {
+			return fmt.Errorf("can't open new logfile: %s", err)
+		}
+	}
+
 	l.file = f
 	l.size = 0
 	return nil
@@ -463,6 +491,16 @@ func (l *Logger) timeSep() string {
 		return defaultTimeSeparator
 	}
 	return l.TimeSeparator
+}
+
+// mode returns the file mode to use for the first file creation
+func (l *Logger) mode() (os.FileMode, error) {
+	if l.FileMode == "" {
+		return defaultFileMode, nil
+	}
+
+	mode, err := strconv.ParseInt(l.FileMode, 8, 64)
+	return os.FileMode(mode), err
 }
 
 // max returns the maximum size in bytes of log files before rolling.
