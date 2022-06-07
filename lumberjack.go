@@ -36,9 +36,10 @@ import (
 )
 
 const (
-	defaultTimeFormat = "2006-01-02T15-04-05.000"
-	compressSuffix    = ".gz"
-	defaultMaxSize    = 100
+	defaultTimeFormat    = "2006-01-02T15-04-05.000"
+	defaultTimeSeparator = "-"
+	compressSuffix       = ".gz"
+	defaultMaxSize       = 100
 )
 
 // ensure we always implement io.WriteCloser
@@ -85,6 +86,10 @@ type Logger struct {
 	// TimeFormat is the time.Time format in backup file names.
 	// It defaults to "2006-01-02T15-04-05.000"
 	TimeFormat string `json:"time_format" yaml:"time_format"`
+
+	// TimeSeparator is the separator that is used in backup name between
+	// original name and appended time. It defaults to "-" (hyphen).
+	TimeSeparator string `json:"timeseparator" yaml:"timeseparator"`
 
 	// MaxSize is the maximum size in megabytes of the log file before it gets
 	// rotated. It defaults to 100 megabytes.
@@ -222,7 +227,7 @@ func (l *Logger) openNew() error {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
-		newname := backupName(name, l.TimeFormat, l.LocalTime)
+		newname := backupName(name, l.timeSep(), l.timeFormat(), l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
 			return fmt.Errorf("can't rename log file: %s", err)
 		}
@@ -248,7 +253,7 @@ func (l *Logger) openNew() error {
 // backupName creates a new filename from the given name, inserting a timestamp
 // between the filename and the extension, using the local time if requested
 // (otherwise UTC).
-func backupName(name, timeFormat string, local bool) string {
+func backupName(name, separator, timeFormat string, local bool) string {
 	dir := filepath.Dir(name)
 	filename := filepath.Base(name)
 	ext := filepath.Ext(filename)
@@ -258,13 +263,8 @@ func backupName(name, timeFormat string, local bool) string {
 		t = t.UTC()
 	}
 
-	format := defaultTimeFormat
-	if timeFormat != "" {
-		format = timeFormat
-	}
-
-	timestamp := t.Format(format)
-	return filepath.Join(dir, fmt.Sprintf("%s-%s%s", prefix, timestamp, ext))
+	timestamp := t.Format(timeFormat)
+	return filepath.Join(dir, fmt.Sprintf("%s%s%s%s", prefix, separator, timestamp, ext))
 }
 
 // openExistingOrNew opens the logfile if it exists and if the current write
@@ -448,12 +448,21 @@ func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 	}
 	ts := filename[len(prefix) : len(filename)-len(ext)]
 
-	format := defaultTimeFormat
-	if l.TimeFormat != "" {
-		format = l.TimeFormat
-	}
+	return time.Parse(l.timeFormat(), ts)
+}
 
-	return time.Parse(format, ts)
+func (l *Logger) timeFormat() string {
+	if l.TimeFormat == "" {
+		return defaultTimeFormat
+	}
+	return l.TimeFormat
+}
+
+func (l *Logger) timeSep() string {
+	if l.TimeSeparator == "" {
+		return defaultTimeSeparator
+	}
+	return l.TimeSeparator
 }
 
 // max returns the maximum size in bytes of log files before rolling.
@@ -474,7 +483,7 @@ func (l *Logger) dir() string {
 func (l *Logger) prefixAndExt() (prefix, ext string) {
 	filename := filepath.Base(l.filename())
 	ext = filepath.Ext(filename)
-	prefix = filename[:len(filename)-len(ext)] + "-"
+	prefix = filename[:len(filename)-len(ext)] + l.timeSep()
 	return prefix, ext
 }
 

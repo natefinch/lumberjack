@@ -508,8 +508,9 @@ func TestTimeFromName(t *testing.T) {
 
 func TestCustomTimeFromName(t *testing.T) {
 	l := &Logger{
-		Filename:   "/var/log/myfoo/foo.log",
-		TimeFormat: "2006-01-02",
+		Filename:      "/var/log/myfoo/foo.log",
+		TimeFormat:    "2006-01-02",
+		TimeSeparator: "_",
 	}
 	prefix, ext := l.prefixAndExt()
 
@@ -518,8 +519,8 @@ func TestCustomTimeFromName(t *testing.T) {
 		want     time.Time
 		wantErr  bool
 	}{
-		{"foo-2014-05-04.log", time.Date(2014, 5, 4, 0, 0, 0, 0, time.UTC), false},
-		{"foo-2014-05-04", time.Time{}, true},
+		{"foo_2014-05-04.log", time.Date(2014, 5, 4, 0, 0, 0, 0, time.UTC), false},
+		{"foo_2014-05-04", time.Time{}, true},
 		{"2014-05-04.log", time.Time{}, true},
 		{"foo.log", time.Time{}, true},
 	}
@@ -556,6 +557,36 @@ func TestLocalTime(t *testing.T) {
 
 	existsWithContent(logFile(dir), b2, t)
 	existsWithContent(backupFileLocal(dir), b, t)
+}
+
+func TestCustomFormat(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+
+	dir := makeTempDir("TestCustomFormat", t)
+	defer os.RemoveAll(dir)
+
+	timeFormat := "2006_01_02_15_04_05"
+	timeSep := "_"
+	l := &Logger{
+		Filename:      logFile(dir),
+		TimeFormat:    timeFormat,
+		TimeSeparator: timeSep,
+		MaxSize:       10,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	b2 := []byte("fooooooo!")
+	n2, err := l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n2, t)
+
+	existsWithContent(logFile(dir), b2, t)
+	existsWithContent(backupFileWitFormat(dir, timeSep, timeFormat), b, t)
 }
 
 func TestRotate(t *testing.T) {
@@ -717,6 +748,7 @@ func TestJson(t *testing.T) {
 	data := []byte(`
 {
 	"filename": "foo",
+	"timeseparator": "_",
 	"maxsize": 5,
 	"maxage": 10,
 	"maxbackups": 3,
@@ -728,6 +760,7 @@ func TestJson(t *testing.T) {
 	err := json.Unmarshal(data, &l)
 	isNil(err, t)
 	equals("foo", l.Filename, t)
+	equals("_", l.TimeSeparator, t)
 	equals(5, l.MaxSize, t)
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
@@ -738,6 +771,7 @@ func TestJson(t *testing.T) {
 func TestYaml(t *testing.T) {
 	data := []byte(`
 filename: foo
+timeseparator: _
 maxsize: 5
 maxage: 10
 maxbackups: 3
@@ -748,6 +782,7 @@ compress: true`[1:])
 	err := yaml.Unmarshal(data, &l)
 	isNil(err, t)
 	equals("foo", l.Filename, t)
+	equals("_", l.TimeSeparator, t)
 	equals(5, l.MaxSize, t)
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
@@ -758,6 +793,7 @@ compress: true`[1:])
 func TestToml(t *testing.T) {
 	data := `
 filename = "foo"
+timeseparator = "_"
 maxsize = 5
 maxage = 10
 maxbackups = 3
@@ -768,6 +804,7 @@ compress = true`[1:]
 	md, err := toml.Decode(data, &l)
 	isNil(err, t)
 	equals("foo", l.Filename, t)
+	equals("_", l.TimeSeparator, t)
 	equals(5, l.MaxSize, t)
 	equals(10, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
@@ -804,11 +841,15 @@ func logFile(dir string) string {
 }
 
 func backupFile(dir string) string {
-	return filepath.Join(dir, "foobar-"+fakeTime().UTC().Format(defaultTimeFormat)+".log")
+	return backupFileWitFormat(dir, defaultTimeSeparator, defaultTimeFormat)
 }
 
 func backupFileLocal(dir string) string {
 	return filepath.Join(dir, "foobar-"+fakeTime().Format(defaultTimeFormat)+".log")
+}
+
+func backupFileWitFormat(dir, timeSeparator, timeFormat string) string {
+	return filepath.Join(dir, "foobar"+timeSeparator+fakeTime().UTC().Format(timeFormat)+".log")
 }
 
 // logFileLocal returns the log file name in the given directory for the current
