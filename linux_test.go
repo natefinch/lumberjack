@@ -1,4 +1,5 @@
-// +build linux
+//go:build !windows
+// +build !windows
 
 package lumberjack
 
@@ -21,11 +22,8 @@ func TestMaintainMode(t *testing.T) {
 	isNil(err, t)
 	f.Close()
 
-	l := &Logger{
-		Filename:   filename,
-		MaxBackups: 1,
-		MaxSize:    100, // megabytes
-	}
+	l, err := NewRoller(filename, 100*1024*1024, &Options{MaxBackups: 1})
+	isNil(err, t)
 	defer l.Close()
 	b := []byte("boo!")
 	n, err := l.Write(b)
@@ -64,11 +62,8 @@ func TestMaintainOwner(t *testing.T) {
 	isNil(err, t)
 	f.Close()
 
-	l := &Logger{
-		Filename:   filename,
-		MaxBackups: 1,
-		MaxSize:    100, // megabytes
-	}
+	l, err := NewRoller(filename, 100*1024*1024, &Options{MaxBackups: 1})
+	isNil(err, t)
 	defer l.Close()
 	b := []byte("boo!")
 	n, err := l.Write(b)
@@ -97,12 +92,8 @@ func TestCompressMaintainMode(t *testing.T) {
 	isNil(err, t)
 	f.Close()
 
-	l := &Logger{
-		Compress:   true,
-		Filename:   filename,
-		MaxBackups: 1,
-		MaxSize:    100, // megabytes
-	}
+	l, err := NewRoller(filename, 100*1024*1024, &Options{MaxBackups: 1, Compress: true})
+	isNil(err, t)
 	defer l.Close()
 	b := []byte("boo!")
 	n, err := l.Write(b)
@@ -147,12 +138,8 @@ func TestCompressMaintainOwner(t *testing.T) {
 	isNil(err, t)
 	f.Close()
 
-	l := &Logger{
-		Compress:   true,
-		Filename:   filename,
-		MaxBackups: 1,
-		MaxSize:    100, // megabytes
-	}
+	l, err := NewRoller(filename, 100*1024*1024, &Options{MaxBackups: 1, Compress: true})
+	isNil(err, t)
 	defer l.Close()
 	b := []byte("boo!")
 	n, err := l.Write(b)

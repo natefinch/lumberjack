@@ -441,7 +441,7 @@ func TestOldLogFiles(t *testing.T) {
 	err = ioutil.WriteFile(backup2, data, 07)
 	isNil(err, t)
 
-	l, err := NewRoller(filename, 1, nil)
+	l, err := NewRoller(filename, 100, nil)
 	isNil(err, t)
 	files, err := l.oldLogFiles()
 	isNil(err, t)
