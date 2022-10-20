@@ -33,6 +33,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/juju/ratelimit"
 )
 
 const (
@@ -106,6 +108,14 @@ type Logger struct {
 	// Compress determines if the rotated log files should be compressed
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
+
+	// CompressRate determines the rate tokens per second up to the given
+	// capacity using gzip.
+	CompressRate float64 `json:"compressRate" yaml:"compress_rate"`
+
+	// CompressCapacity determines the rate tokens per second up to the given
+	// capacity using gzip.
+	CompressCapacity int64 `json:"compressCapacity" yaml:"compress_capacity"`
 
 	size int64
 	file *os.File
@@ -364,7 +374,7 @@ func (l *Logger) millRunOnce() error {
 	}
 	for _, f := range compress {
 		fn := filepath.Join(l.dir(), f.Name())
-		errCompress := compressLogFile(fn, fn+compressSuffix)
+		errCompress := compressLogFile(fn, fn+compressSuffix, l.CompressRate, l.CompressCapacity)
 		if err == nil && errCompress != nil {
 			err = errCompress
 		}
@@ -465,7 +475,7 @@ func (l *Logger) prefixAndExt() (prefix, ext string) {
 
 // compressLogFile compresses the given log file, removing the
 // uncompressed log file if successful.
-func compressLogFile(src, dst string) (err error) {
+func compressLogFile(src string, dst string, compressRate float64, compressCapacity int64) (err error) {
 	f, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %v", err)
@@ -498,7 +508,8 @@ func compressLogFile(src, dst string) (err error) {
 		}
 	}()
 
-	if _, err := io.Copy(gz, f); err != nil {
+	bucket := ratelimit.NewBucketWithRate(compressRate, compressCapacity)
+	if _, err := io.Copy(gz, ratelimit.Reader(f, bucket)); err != nil {
 		return err
 	}
 	if err := gz.Close(); err != nil {
