@@ -82,7 +82,8 @@ type Logger struct {
 	// os.TempDir() if empty.
 	Filename string `json:"filename" yaml:"filename"`
 
-
+	// BackupDir is the dir to moving the backup logs to. 
+	// It uses the same directory of Filename if empty.
 	BackupDir string `json:"backupdir" yaml:"backupdir"`
 
 	// MaxSize is the maximum size in megabytes of the log file before it gets
@@ -465,7 +466,7 @@ func (l *Logger) bkdir() string {
 	if (l.BackupDir != "") {
 		return l.BackupDir
 	}
-	return filepath.Dir(l.filename())
+	return l.dir()
 }
 
 // prefixAndExt returns the filename part and extension part from the Logger's
