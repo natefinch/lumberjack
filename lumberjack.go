@@ -82,6 +82,10 @@ type Logger struct {
 	// os.TempDir() if empty.
 	Filename string `json:"filename" yaml:"filename"`
 
+	// BackupDir is the dir to moving the backup logs to. 
+	// It uses the same directory of Filename if empty.
+	BackupDir string `json:"backupdir" yaml:"backupdir"`
+
 	// MaxSize is the maximum size in megabytes of the log file before it gets
 	// rotated. It defaults to 100 megabytes.
 	MaxSize int `json:"maxsize" yaml:"maxsize"`
@@ -218,7 +222,7 @@ func (l *Logger) openNew() error {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
-		newname := backupName(name, l.LocalTime)
+		newname := backupName(l.bkdir(), name, l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
 			return fmt.Errorf("can't rename log file: %s", err)
 		}
@@ -244,8 +248,13 @@ func (l *Logger) openNew() error {
 // backupName creates a new filename from the given name, inserting a timestamp
 // between the filename and the extension, using the local time if requested
 // (otherwise UTC).
-func backupName(name string, local bool) string {
-	dir := filepath.Dir(name)
+func backupName(bkdir string, name string, local bool) string {
+	var dir string
+	if (bkdir != "") {
+		dir = bkdir
+	} else {
+		dir = filepath.Dir(name)
+	}
 	filename := filepath.Base(name)
 	ext := filepath.Ext(filename)
 	prefix := filename[:len(filename)-len(ext)]
@@ -398,7 +407,7 @@ func (l *Logger) mill() {
 // oldLogFiles returns the list of backup log files stored in the same
 // directory as the current log file, sorted by ModTime
 func (l *Logger) oldLogFiles() ([]logInfo, error) {
-	files, err := ioutil.ReadDir(l.dir())
+	files, err := ioutil.ReadDir(l.bkdir())
 	if err != nil {
 		return nil, fmt.Errorf("can't read log file directory: %s", err)
 	}
@@ -452,6 +461,12 @@ func (l *Logger) max() int64 {
 // dir returns the directory for the current filename.
 func (l *Logger) dir() string {
 	return filepath.Dir(l.filename())
+}
+func (l *Logger) bkdir() string {
+	if (l.BackupDir != "") {
+		return l.BackupDir
+	}
+	return l.dir()
 }
 
 // prefixAndExt returns the filename part and extension part from the Logger's

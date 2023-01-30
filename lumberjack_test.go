@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	//"os/signal"
+	//"syscall"
 	"path/filepath"
 	"testing"
 	"time"
-
+	"log"
 	"github.com/BurntSushi/toml"
 )
 
@@ -792,4 +794,23 @@ func notExist(path string, t testing.TB) {
 func exists(path string, t testing.TB) {
 	_, err := os.Stat(path)
 	assertUp(err == nil, t, 1, "expected file to exist, but got error from os.Stat: %v", err)
+}
+
+
+
+func TestLogger_Rotate(t *testing.T) {
+
+	l := &Logger{
+		Filename: "./t.log",
+		BackupDir: "./bk",
+		MaxSize: 200,
+		MaxBackups: 2,
+	}
+	log.SetOutput(l)
+
+	for i := 0; i <= 1009000; i++ {
+		log.Println(">>>>>>>>>>>>>>>>>>>>")
+	 }
+
+	l.Rotate()
 }
