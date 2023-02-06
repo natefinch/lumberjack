@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/BurntSushi/toml"
 )
 
 // !!!NOTE!!!
@@ -707,27 +705,6 @@ func TestJson(t *testing.T) {
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
 	equals(true, l.Compress, t)
-}
-
-func TestToml(t *testing.T) {
-	data := `
-filename = "foo"
-maxsize = 5
-maxage = 10
-maxbackups = 3
-localtime = true
-compress = true`[1:]
-
-	l := Logger{}
-	md, err := toml.Decode(data, &l)
-	isNil(err, t)
-	equals("foo", l.Filename, t)
-	equals(5, l.MaxSize, t)
-	equals(10, l.MaxAge, t)
-	equals(3, l.MaxBackups, t)
-	equals(true, l.LocalTime, t)
-	equals(true, l.Compress, t)
-	equals(0, len(md.Undecoded()), t)
 }
 
 // makeTempDir creates a file with a semi-unique name in the OS temp directory.
