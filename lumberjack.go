@@ -36,9 +36,11 @@ import (
 )
 
 const (
-	backupTimeFormat = "2006-01-02T15-04-05.000"
-	compressSuffix   = ".gz"
-	defaultMaxSize   = 100
+	backupTimeFormat     = "2006-01-02T15-04-05.000"
+	compressSuffix       = ".gz"
+	defaultMaxSize       = 100
+	defaultNewLogFilePem = 0600
+	defaultNewLogDirPem  = 0755
 )
 
 // ensure we always implement io.WriteCloser
@@ -106,6 +108,15 @@ type Logger struct {
 	// Compress determines if the rotated log files should be compressed
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
+
+	// NewFilePem determines the permission to create new log file if not exists
+	// log file. Otherwise copy the permission from exist log file to cerate new
+	// log file.
+	NewFilePem uint32 `json:"newfilepem" yaml:"newfilepem"`
+
+	// NewDirPem determines the permission to create log dir if the log dir not
+	// exists.
+	NewDirPem uint32 `json:"newdirpem" yaml:"newdirpem"`
 
 	size int64
 	file *os.File
@@ -206,13 +217,13 @@ func (l *Logger) rotate() error {
 // openNew opens a new log file for writing, moving any old log file out of the
 // way.  This methods assumes the file has already been closed.
 func (l *Logger) openNew() error {
-	err := os.MkdirAll(l.dir(), 0755)
+	err := os.MkdirAll(l.dir(), l.logDirPem())
 	if err != nil {
 		return fmt.Errorf("can't make directories for new logfile: %s", err)
 	}
 
 	name := l.filename()
-	mode := os.FileMode(0600)
+	mode := l.logFilePem()
 	info, err := osStat(name)
 	if err == nil {
 		// Copy the mode off the old logfile.
@@ -277,7 +288,7 @@ func (l *Logger) openExistingOrNew(writeLen int) error {
 		return l.rotate()
 	}
 
-	file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, l.logFilePem())
 	if err != nil {
 		// if we fail to open the old log file for some reason, just ignore
 		// it and open a new log file.
@@ -447,6 +458,22 @@ func (l *Logger) max() int64 {
 		return int64(defaultMaxSize * megabyte)
 	}
 	return int64(l.MaxSize) * int64(megabyte)
+}
+
+// logFilePem returns the permission of new log file
+func (l *Logger) logFilePem() os.FileMode {
+	if l.NewFilePem == 0 {
+		return os.FileMode(defaultNewLogFilePem)
+	}
+	return os.FileMode(l.NewFilePem)
+}
+
+// logDirPem returns the permission of new log dir
+func (l *Logger) logDirPem() os.FileMode {
+	if l.NewDirPem == 0 {
+		return os.FileMode(defaultNewLogDirPem)
+	}
+	return os.FileMode(l.NewDirPem)
 }
 
 // dir returns the directory for the current filename.
