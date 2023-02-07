@@ -7,6 +7,12 @@ Package lumberjack provides a rolling logger.
 Note that this is v2.0 of lumberjack, and should be imported using gopkg.in
 thusly:
 
+Install:
+    
+    go get gopkg.in/natefinch/lumberjack.v2
+
+Use:
+
     import "gopkg.in/natefinch/lumberjack.v2"
 
 The package name remains simply lumberjack, and the code resides at
