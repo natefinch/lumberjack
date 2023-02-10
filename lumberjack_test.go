@@ -162,6 +162,51 @@ func TestAutoRotate(t *testing.T) {
 	fileCount(dir, 2, t)
 }
 
+func TestAutoRotateInBackupDirectory(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+
+	dir := makeTempDir("TestAutoRotate", t)
+	backupDir := filepath.Join(dir, "backup")
+	isNilUp(os.Mkdir(backupDir, 0700), t, 1)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	l := &Logger{
+		Filename:        filename,
+		BackupDirectory: backupDir,
+		MaxSize:         10,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	existsWithContent(filename, b, t)
+
+	// we expect to have the backup directory as well as the active log file
+	// here.
+	fileCount(dir, 2, t)
+
+	newFakeTime()
+
+	b2 := []byte("foooooo!")
+	n, err = l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+
+	// the old logfile should be moved in the backup directory and the main
+	// logfile should have only the last write in it.
+	existsWithContent(filename, b2, t)
+
+	// the backup file will use the current fake time and have the old contents.
+	existsWithContent(backupFile(backupDir), b, t)
+
+	fileCount(dir, 2, t)
+	fileCount(backupDir, 1, t)
+}
+
 func TestFirstWriteRotate(t *testing.T) {
 	currentTime = fakeTime
 	megabyte = 1
@@ -191,6 +236,41 @@ func TestFirstWriteRotate(t *testing.T) {
 	existsWithContent(backupFile(dir), start, t)
 
 	fileCount(dir, 2, t)
+}
+
+func TestFirstWriteRotateInBackupDirectory(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+	dir := makeTempDir("TestFirstWriteRotate", t)
+	backupDir := filepath.Join(dir, "backup")
+	isNilUp(os.Mkdir(backupDir, 0700), t, 1)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	l := &Logger{
+		Filename:        filename,
+		BackupDirectory: backupDir,
+		MaxSize:         10,
+	}
+	defer l.Close()
+
+	start := []byte("boooooo!")
+	err := ioutil.WriteFile(filename, start, 0600)
+	isNil(err, t)
+
+	newFakeTime()
+
+	// this would make us rotate
+	b := []byte("fooo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	existsWithContent(filename, b, t)
+	existsWithContent(backupFile(backupDir), start, t)
+
+	fileCount(dir, 2, t)
+	fileCount(backupDir, 1, t)
 }
 
 func TestMaxBackups(t *testing.T) {
@@ -318,6 +398,142 @@ func TestMaxBackups(t *testing.T) {
 	exists(notlogfiledir, t)
 }
 
+func TestMaxBackupsInBackupDir(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+	dir := makeTempDir("TestMaxBackups", t)
+	backupDir := filepath.Join(dir, "backup")
+	isNilUp(os.Mkdir(backupDir, 0700), t, 1)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	l := &Logger{
+		Filename:        filename,
+		BackupDirectory: backupDir,
+		MaxSize:         10,
+		MaxBackups:      1,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	existsWithContent(filename, b, t)
+
+	// we expect to have the backup directory as well as the active log file
+	// here.
+	fileCount(dir, 2, t)
+
+	newFakeTime()
+
+	// this will put us over the max
+	b2 := []byte("foooooo!")
+	n, err = l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+
+	// this will use the new fake time
+	secondFilename := backupFile(backupDir)
+	existsWithContent(secondFilename, b, t)
+
+	// make sure the old file still exists with the same content.
+	existsWithContent(filename, b2, t)
+
+	fileCount(dir, 2, t)
+
+	newFakeTime()
+
+	// this will make us rotate again
+	b3 := []byte("baaaaaar!")
+	n, err = l.Write(b3)
+	isNil(err, t)
+	equals(len(b3), n, t)
+
+	// this will use the new fake time
+	thirdFilename := backupFile(backupDir)
+	existsWithContent(thirdFilename, b2, t)
+
+	existsWithContent(filename, b3, t)
+
+	// we need to wait a little bit since the files get deleted on a different
+	// goroutine.
+	<-time.After(time.Millisecond * 10)
+
+	// should only have two files in the dir still
+	fileCount(dir, 2, t)
+
+	// second file name should still exist
+	existsWithContent(thirdFilename, b2, t)
+
+	// should have deleted the first backup
+	notExist(secondFilename, t)
+
+	// now test that we don't delete directories or non-logfile files
+
+	newFakeTime()
+
+	// create a file that is close to but different from the logfile name.
+	// It shouldn't get caught by our deletion filters.
+	notlogfile := logFile(dir) + ".foo"
+	err = ioutil.WriteFile(notlogfile, []byte("data"), 0644)
+	isNil(err, t)
+
+	// Make a directory that exactly matches our log file filters... it still
+	// shouldn't get caught by the deletion filter since it's a directory.
+	notlogfiledir := backupFile(backupDir)
+	err = os.Mkdir(notlogfiledir, 0700)
+	isNil(err, t)
+
+	newFakeTime()
+
+	// this will use the new fake time
+	fourthFilename := backupFile(backupDir)
+
+	// Create a log file that is/was being compressed - this should
+	// not be counted since both the compressed and the uncompressed
+	// log files still exist.
+	compLogFile := fourthFilename + compressSuffix
+	err = ioutil.WriteFile(compLogFile, []byte("compress"), 0644)
+	isNil(err, t)
+
+	// this will make us rotate again
+	b4 := []byte("baaaaaaz!")
+	n, err = l.Write(b4)
+	isNil(err, t)
+	equals(len(b4), n, t)
+
+	existsWithContent(fourthFilename, b3, t)
+	existsWithContent(fourthFilename+compressSuffix, []byte("compress"), t)
+
+	// we need to wait a little bit since the files get deleted on a different
+	// goroutine.
+	<-time.After(time.Millisecond * 10)
+
+	// We should have tree things in the directory now - the log file, the not
+	// log file, and the directory
+	fileCount(dir, 3, t)
+
+	// We should have tree things in the directory now - the log file as
+	// directory, the compressed log file and the not log file and the log
+	// file.
+	fileCount(backupDir, 3, t)
+
+	// third file name should still exist
+	existsWithContent(filename, b4, t)
+
+	existsWithContent(fourthFilename, b3, t)
+
+	// should have deleted the first filename
+	notExist(thirdFilename, t)
+
+	// the not-a-logfile should still exist
+	exists(notlogfile, t)
+
+	// the directory
+	exists(notlogfiledir, t)
+}
+
 func TestCleanupExistingBackups(t *testing.T) {
 	// test that if we start with more backup files than we're supposed to have
 	// in total, that extra ones get cleaned up when we rotate.
@@ -371,6 +587,67 @@ func TestCleanupExistingBackups(t *testing.T) {
 	<-time.After(time.Millisecond * 10)
 
 	// now we should only have 2 files left - the primary and one backup
+	fileCount(dir, 2, t)
+}
+
+func TestCleanupExistingBackupsInBackupDir(t *testing.T) {
+	// test that if we start with more backup files than we're supposed to have
+	// in total, that extra ones get cleaned up when we rotate.
+
+	currentTime = fakeTime
+	megabyte = 1
+
+	dir := makeTempDir("TestCleanupExistingBackups", t)
+	backupDir := filepath.Join(dir, "backup")
+	isNilUp(os.Mkdir(backupDir, 0700), t, 1)
+	defer os.RemoveAll(dir)
+
+	// make 3 backup files
+
+	data := []byte("data")
+	backup := backupFile(backupDir)
+	err := ioutil.WriteFile(backup, data, 0644)
+	isNil(err, t)
+
+	newFakeTime()
+
+	backup = backupFile(backupDir)
+	err = ioutil.WriteFile(backup+compressSuffix, data, 0644)
+	isNil(err, t)
+
+	newFakeTime()
+
+	backup = backupFile(backupDir)
+	err = ioutil.WriteFile(backup, data, 0644)
+	isNil(err, t)
+
+	// now create a primary log file with some data
+	filename := logFile(dir)
+	err = ioutil.WriteFile(filename, data, 0644)
+	isNil(err, t)
+
+	l := &Logger{
+		Filename:        filename,
+		BackupDirectory: backupDir,
+		MaxSize:         10,
+		MaxBackups:      1,
+	}
+	defer l.Close()
+
+	newFakeTime()
+
+	b2 := []byte("foooooo!")
+	n, err := l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+
+	// we need to wait a little bit since the files get deleted on a different
+	// goroutine.
+	<-time.After(time.Millisecond * 10)
+
+	// now we should only have 1 file left - one backup
+	fileCount(backupDir, 1, t)
+	// and the primary log file (plus the backup folder)
 	fileCount(dir, 2, t)
 }
 
@@ -587,6 +864,67 @@ func TestRotate(t *testing.T) {
 	existsWithContent(filename, b2, t)
 }
 
+func TestRotateInBackupDir(t *testing.T) {
+	currentTime = fakeTime
+	dir := makeTempDir("TestRotate", t)
+	backupDir := filepath.Join(dir, "backup")
+	isNilUp(os.Mkdir(backupDir, 0700), t, 1)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+
+	l := &Logger{
+		Filename:        filename,
+		BackupDirectory: backupDir,
+		MaxBackups:      1,
+		MaxSize:         100, // megabytes
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	existsWithContent(filename, b, t)
+	fileCount(dir, 2, t)
+
+	newFakeTime()
+
+	err = l.Rotate()
+	isNil(err, t)
+
+	// we need to wait a little bit since the files get deleted on a different
+	// goroutine.
+	<-time.After(10 * time.Millisecond)
+
+	filename2 := backupFile(backupDir)
+	existsWithContent(filename2, b, t)
+	existsWithContent(filename, []byte{}, t)
+	fileCount(dir, 2, t)
+	fileCount(backupDir, 1, t)
+	newFakeTime()
+
+	err = l.Rotate()
+	isNil(err, t)
+
+	// we need to wait a little bit since the files get deleted on a different
+	// goroutine.
+	<-time.After(10 * time.Millisecond)
+
+	filename3 := backupFile(backupDir)
+	existsWithContent(filename3, []byte{}, t)
+	existsWithContent(filename, []byte{}, t)
+	fileCount(backupDir, 1, t)
+
+	b2 := []byte("foooooo!")
+	n, err = l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+
+	// this will use the new fake time
+	existsWithContent(filename, b2, t)
+}
+
 func TestCompressOnRotate(t *testing.T) {
 	currentTime = fakeTime
 	megabyte = 1
@@ -636,6 +974,58 @@ func TestCompressOnRotate(t *testing.T) {
 	fileCount(dir, 2, t)
 }
 
+func TestCompressOnRotateInBackupDir(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+
+	dir := makeTempDir("TestCompressOnRotate", t)
+	backupDir := filepath.Join(dir, "backup")
+	isNilUp(os.Mkdir(backupDir, 0700), t, 1)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	l := &Logger{
+		Compress:        true,
+		Filename:        filename,
+		BackupDirectory: backupDir,
+		MaxSize:         10,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	existsWithContent(filename, b, t)
+	fileCount(dir, 2, t)
+
+	newFakeTime()
+
+	err = l.Rotate()
+	isNil(err, t)
+
+	// the old logfile should be moved aside and the main logfile should have
+	// nothing in it.
+	existsWithContent(filename, []byte{}, t)
+
+	// we need to wait a little bit since the files get compressed on a different
+	// goroutine.
+	<-time.After(300 * time.Millisecond)
+
+	// a compressed version of the log file should now exist and the original
+	// should have been removed.
+	bc := new(bytes.Buffer)
+	gz := gzip.NewWriter(bc)
+	_, err = gz.Write(b)
+	isNil(err, t)
+	err = gz.Close()
+	isNil(err, t)
+	existsWithContent(backupFile(backupDir)+compressSuffix, bc.Bytes(), t)
+	notExist(backupFile(backupDir), t)
+
+	fileCount(dir, 2, t)
+}
+
 func TestCompressOnResume(t *testing.T) {
 	currentTime = fakeTime
 	megabyte = 1
@@ -653,6 +1043,58 @@ func TestCompressOnResume(t *testing.T) {
 
 	// Create a backup file and empty "compressed" file.
 	filename2 := backupFile(dir)
+	b := []byte("foo!")
+	err := ioutil.WriteFile(filename2, b, 0644)
+	isNil(err, t)
+	err = ioutil.WriteFile(filename2+compressSuffix, []byte{}, 0644)
+	isNil(err, t)
+
+	newFakeTime()
+
+	b2 := []byte("boo!")
+	n, err := l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+	existsWithContent(filename, b2, t)
+
+	// we need to wait a little bit since the files get compressed on a different
+	// goroutine.
+	<-time.After(300 * time.Millisecond)
+
+	// The write should have started the compression - a compressed version of
+	// the log file should now exist and the original should have been removed.
+	bc := new(bytes.Buffer)
+	gz := gzip.NewWriter(bc)
+	_, err = gz.Write(b)
+	isNil(err, t)
+	err = gz.Close()
+	isNil(err, t)
+	existsWithContent(filename2+compressSuffix, bc.Bytes(), t)
+	notExist(filename2, t)
+
+	fileCount(dir, 2, t)
+}
+
+func TestCompressOnResumeInBackupDir(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+
+	dir := makeTempDir("TestCompressOnResume", t)
+	backupDir := filepath.Join(dir, "backup")
+	isNilUp(os.Mkdir(backupDir, 0700), t, 1)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	l := &Logger{
+		Compress:        true,
+		Filename:        filename,
+		BackupDirectory: backupDir,
+		MaxSize:         10,
+	}
+	defer l.Close()
+
+	// Create a backup file and empty "compressed" file.
+	filename2 := backupFile(backupDir)
 	b := []byte("foo!")
 	err := ioutil.WriteFile(filename2, b, 0644)
 	isNil(err, t)
