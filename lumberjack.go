@@ -107,6 +107,12 @@ type Logger struct {
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
 
+	// PreRotateAction is the action specified before log rotation occurs
+	PreRotateAction func()
+
+	// PostRotateAction is the action specified after log rotation occurs
+	PostRotateAction func()
+
 	size int64
 	file *os.File
 	mu   sync.Mutex
@@ -193,12 +199,21 @@ func (l *Logger) Rotate() error {
 // (if it exists), opens a new file with the original filename, and then runs
 // post-rotation processing and removal.
 func (l *Logger) rotate() error {
+	if l.PreRotateAction != nil {
+		l.PreRotateAction()
+	}
+
 	if err := l.close(); err != nil {
 		return err
 	}
 	if err := l.openNew(); err != nil {
 		return err
 	}
+
+	if l.PostRotateAction != nil {
+		l.PostRotateAction()
+	}
+
 	l.mill()
 	return nil
 }
