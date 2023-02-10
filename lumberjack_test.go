@@ -71,6 +71,28 @@ func TestOpenExisting(t *testing.T) {
 	fileCount(dir, 1, t)
 }
 
+func TestOpenNotExisting(t *testing.T) {
+	currentTime = fakeTime
+	dir := makeTempDir("TestOpenNotExisting", t)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	l := &Logger{
+		Filename: filename,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	// make sure the file got appended
+	existsWithContent(filename, append(b), t)
+
+	// make sure no other files were created
+	fileCount(dir, 1, t)
+}
+
 func TestWriteTooLong(t *testing.T) {
 	currentTime = fakeTime
 	megabyte = 1
