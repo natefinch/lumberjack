@@ -41,6 +41,15 @@ const (
 	defaultMaxSize   = 100
 )
 
+type PERIOD int
+
+const (
+	PERIOD_CLOSE PERIOD = iota
+	PERIOD_MINUTE
+	PERIOD_HOUR
+	PERIOD_DAY
+)
+
 // ensure we always implement io.WriteCloser
 var _ io.WriteCloser = (*Logger)(nil)
 
@@ -102,6 +111,11 @@ type Logger struct {
 	// backup files is the computer's local time.  The default is to use UTC
 	// time.
 	LocalTime bool `json:"localtime" yaml:"localtime"`
+
+	// Period defines how offen the log file will get rotated automatically. 0 = PERIOD_CLOSE(default)
+	// means not to rotate automatically, PERIOD_MINUTE means ratating every minute,
+	// PERIOD_HOUR means ratating every hour, PERIOD_DAY or larger means rotating every day.
+	Period PERIOD `json:"period" yaml:"period"`
 
 	// Compress determines if the rotated log files should be compressed
 	// using gzip. The default is not to perform compression.
@@ -388,10 +402,54 @@ func (l *Logger) mill() {
 	l.startMill.Do(func() {
 		l.millCh = make(chan bool, 1)
 		go l.millRun()
+		go l.periodRotate()
 	})
 	select {
 	case l.millCh <- true:
 	default:
+	}
+}
+
+// automates rotation periodically
+func (l *Logger) periodRotate() {
+	if l.Period <= PERIOD_CLOSE {
+		return
+	}
+	// period means the frequency to rotate in second.
+	// We also need to comute next rotate sharp time after the first write.
+	// For example, we write the first log in 16:09 and we set period 2, so next rotate
+	// should be in 17:00, 18:00, 19:00, etc.
+	period := time.Second * 1
+	duration := 0
+	timer := currentTime()
+	currentSecond := timer.Second()
+	currentMinute := timer.Minute()
+	currentHour := timer.Hour()
+	if !l.LocalTime {
+		currentHour = timer.UTC().Hour()
+	}
+	switch l.Period {
+	case PERIOD_MINUTE:
+		period *= 60
+		duration = 60 - currentSecond
+	case PERIOD_HOUR:
+		period *= 3600
+		duration = 3600 - currentMinute*60 - currentSecond
+	default:
+		period *= 86400
+		duration = 86400 - currentHour*3600 - currentMinute*60 - currentSecond
+	}
+	if duration > 0 {
+		time.Sleep(time.Duration(duration) * time.Second)
+		l.rotate()
+	}
+
+	ticker := time.NewTicker(period)
+	for {
+		select {
+		case <-ticker.C:
+			l.rotate()
+		}
 	}
 }
 
