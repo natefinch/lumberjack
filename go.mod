@@ -1,3 +1,3 @@
-module github.com/natefinch/lumberjack/v3
+module github.com/dxasu/lumberjack/v3
 
-go 1.13
+go 1.18
