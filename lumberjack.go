@@ -1,9 +1,9 @@
-// Package lumberjack provides a rolling logger.
+// Package lumberjack provides a rolling Logger.
 //
 // Note that this is v2.0 of lumberjack, and should be imported using gopkg.in
 // thusly:
 //
-//   import "gopkg.in/natefinch/lumberjack.v2"
+//	import "gopkg.in/natefinch/lumberjack.v2"
 //
 // The package name remains simply lumberjack, and the code resides at
 // https://github.com/natefinch/lumberjack under the v2.0 branch.
@@ -66,7 +66,7 @@ var _ io.WriteCloser = (*Logger)(nil)
 // `/var/log/foo/server.log`, a backup created at 6:30pm on Nov 11 2016 would
 // use the filename `/var/log/foo/server-2016-11-04T18-30-00.000.log`
 //
-// Cleaning Up Old Log Files
+// # Cleaning Up Old Log Files
 //
 // Whenever a new logfile gets created, old log files may be deleted.  The most
 // recent files according to the encoded timestamp will be retained, up to a
@@ -97,6 +97,9 @@ type Logger struct {
 	// is to retain all old log files (though MaxAge may still cause them to get
 	// deleted.)
 	MaxBackups int `json:"maxbackups" yaml:"maxbackups"`
+
+	// NoBackups determines if new log files will be created if size limit is exceeded.
+	NoBackups bool `json:"nobackups" yaml:"nobackups"`
 
 	// LocalTime determines if the time used for formatting the timestamps in
 	// backup files is the computer's local time.  The default is to use UTC
@@ -214,7 +217,7 @@ func (l *Logger) openNew() error {
 	name := l.filename()
 	mode := os.FileMode(0600)
 	info, err := osStat(name)
-	if err == nil {
+	if err == nil && !l.NoBackups {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
