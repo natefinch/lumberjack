@@ -1,4 +1,4 @@
-// Package lumberjack provides a rolling Logger.
+// Package lumberjack provides a rolling logger.
 //
 // Note that this is v2.0 of lumberjack, and should be imported using gopkg.in
 // thusly:
