@@ -3,7 +3,7 @@
 // Note that this is v2.0 of lumberjack, and should be imported using gopkg.in
 // thusly:
 //
-//   import "gopkg.in/natefinch/lumberjack.v2"
+//	import "gopkg.in/natefinch/lumberjack.v2"
 //
 // The package name remains simply lumberjack, and the code resides at
 // https://github.com/natefinch/lumberjack under the v2.0 branch.
@@ -66,7 +66,7 @@ var _ io.WriteCloser = (*Logger)(nil)
 // `/var/log/foo/server.log`, a backup created at 6:30pm on Nov 11 2016 would
 // use the filename `/var/log/foo/server-2016-11-04T18-30-00.000.log`
 //
-// Cleaning Up Old Log Files
+// # Cleaning Up Old Log Files
 //
 // Whenever a new logfile gets created, old log files may be deleted.  The most
 // recent files according to the encoded timestamp will be retained, up to a
@@ -438,7 +438,11 @@ func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 		return time.Time{}, errors.New("mismatched extension")
 	}
 	ts := filename[len(prefix) : len(filename)-len(ext)]
-	return time.Parse(backupTimeFormat, ts)
+	if !l.LocalTime {
+		return time.Parse(backupTimeFormat, ts)
+	} else {
+		return time.ParseInLocation(backupTimeFormat, ts, time.Local)
+	}
 }
 
 // max returns the maximum size in bytes of log files before rolling.
