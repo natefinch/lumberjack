@@ -107,6 +107,9 @@ type Logger struct {
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
 
+	// BeforeDeleteFunc, if provided, will be called just before an old log file is deleted
+	BeforeDeleteFunc func(path string)
+
 	size int64
 	file *os.File
 	mu   sync.Mutex
@@ -357,7 +360,11 @@ func (l *Logger) millRunOnce() error {
 	}
 
 	for _, f := range remove {
-		errRemove := os.Remove(filepath.Join(l.dir(), f.Name()))
+		path := filepath.Join(l.dir(), f.Name())
+		if l.BeforeDeleteFunc != nil {
+			l.BeforeDeleteFunc(path)
+		}
+		errRemove := os.Remove(path)
 		if err == nil && errRemove != nil {
 			err = errRemove
 		}
