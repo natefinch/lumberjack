@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -585,6 +586,57 @@ func TestRotate(t *testing.T) {
 
 	// this will use the new fake time
 	existsWithContent(filename, b2, t)
+}
+
+// TestRotateMaxBackups ensures the number of backup logs does not exceed.
+// go test ./ -race -c
+// stress ./lumberjack.v2.test -test.run TestRotateMaxBackups
+func TestRotateMaxBackups(t *testing.T) {
+	dir := t.TempDir()
+	filename := dir + "/log.txt"
+	l := &Logger{
+		Filename:   filename,
+		MaxBackups: 2,
+		MaxSize:    1, // 1M
+		MaxAge:     30,
+	}
+	defer l.Close()
+
+	// construct a log string that contains 128 characters
+	line := ""
+	for i := 0; i < 8; i++ {
+		line += "0123456789ABCDEF" // 16 characters
+	}
+	lineBytes := []byte(line)
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			for ii := 0; ii < 1024; ii++ {
+				for j := 0; j < 8; j++ {
+					l.Write(lineBytes)
+				}
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+
+	rd, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("Unable to read dir: %v", err)
+	}
+
+	if len(rd) == l.MaxBackups+1 {
+		// perfect, we're done
+		return
+	}
+
+	for _, f := range rd {
+		t.Log(f.Name())
+	}
+	t.Errorf("Expecting at most %d backup logs, but %s has %d backups", l.MaxBackups, dir, len(rd)-1)
 }
 
 func TestCompressOnRotate(t *testing.T) {
