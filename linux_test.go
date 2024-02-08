@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 package lumberjack
@@ -24,7 +25,7 @@ func TestMaintainMode(t *testing.T) {
 	l := &Logger{
 		Filename:   filename,
 		MaxBackups: 1,
-		MaxSize:    100, // megabytes
+		MaxSize:    100, // mibibytes
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -67,7 +68,7 @@ func TestMaintainOwner(t *testing.T) {
 	l := &Logger{
 		Filename:   filename,
 		MaxBackups: 1,
-		MaxSize:    100, // megabytes
+		MaxSize:    100, // mibibytes
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -101,7 +102,7 @@ func TestCompressMaintainMode(t *testing.T) {
 		Compress:   true,
 		Filename:   filename,
 		MaxBackups: 1,
-		MaxSize:    100, // megabytes
+		MaxSize:    100, // mibibytes
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -151,7 +152,7 @@ func TestCompressMaintainOwner(t *testing.T) {
 		Compress:   true,
 		Filename:   filename,
 		MaxBackups: 1,
-		MaxSize:    100, // megabytes
+		MaxSize:    100, // mibibytes
 	}
 	defer l.Close()
 	b := []byte("boo!")
