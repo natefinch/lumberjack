@@ -587,6 +587,30 @@ func TestRotate(t *testing.T) {
 	existsWithContent(filename, b2, t)
 }
 
+func TestReservedSize(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1 << 20
+	dir := makeTempDir("TestReservedSize", t)
+	defer os.RemoveAll(dir)
+
+	l := &Logger{
+		Filename:     logFile(dir),
+		ReservedSize: 1 << 30, // large enough reserved size
+		LocalTime:    true,
+	}
+	defer l.Close()
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	err = l.Rotate()
+	isNil(err, t)
+
+	<-time.After(20 * time.Millisecond)
+	notExist(backupFileLocal(dir), t)
+}
+
 func TestCompressOnRotate(t *testing.T) {
 	currentTime = fakeTime
 	megabyte = 1
