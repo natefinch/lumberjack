@@ -1,12 +1,13 @@
+//go:build linux
 // +build linux
 
 package lumberjack
 
 import (
 	"os"
+	"sync"
 	"syscall"
 	"testing"
-	"time"
 )
 
 func TestMaintainMode(t *testing.T) {
@@ -98,10 +99,11 @@ func TestCompressMaintainMode(t *testing.T) {
 	f.Close()
 
 	l := &Logger{
-		Compress:   true,
-		Filename:   filename,
-		MaxBackups: 1,
-		MaxSize:    100, // megabytes
+		Compress:         true,
+		Filename:         filename,
+		MaxBackups:       1,
+		MaxSize:          100, // megabytes
+		notifyCompressed: make(chan struct{}),
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -114,9 +116,7 @@ func TestCompressMaintainMode(t *testing.T) {
 	err = l.Rotate()
 	isNil(err, t)
 
-	// we need to wait a little bit since the files get compressed on a different
-	// goroutine.
-	<-time.After(10 * time.Millisecond)
+	waitForNotify(l.notifyCompressed, t)
 
 	// a compressed version of the log file should now exist with the correct
 	// mode.
@@ -148,10 +148,11 @@ func TestCompressMaintainOwner(t *testing.T) {
 	f.Close()
 
 	l := &Logger{
-		Compress:   true,
-		Filename:   filename,
-		MaxBackups: 1,
-		MaxSize:    100, // megabytes
+		Compress:         true,
+		Filename:         filename,
+		MaxBackups:       1,
+		MaxSize:          100, // megabytes
+		notifyCompressed: make(chan struct{}),
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -164,15 +165,14 @@ func TestCompressMaintainOwner(t *testing.T) {
 	err = l.Rotate()
 	isNil(err, t)
 
-	// we need to wait a little bit since the files get compressed on a different
-	// goroutine.
-	<-time.After(10 * time.Millisecond)
+	waitForNotify(l.notifyCompressed, t)
 
 	// a compressed version of the log file should now exist with the correct
 	// owner.
 	filename2 := backupFile(dir)
-	equals(555, fakeFS.files[filename2+compressSuffix].uid, t)
-	equals(666, fakeFS.files[filename2+compressSuffix].gid, t)
+	uid, gid := fakeFS.fileOwners(filename2 + compressSuffix)
+	equals(555, uid, t)
+	equals(666, gid, t)
 }
 
 type fakeFile struct {
@@ -182,18 +182,30 @@ type fakeFile struct {
 
 type fakeFS struct {
 	files map[string]fakeFile
+	mu    sync.Mutex
 }
 
 func newFakeFS() *fakeFS {
 	return &fakeFS{files: make(map[string]fakeFile)}
 }
 
+func (fs *fakeFS) fileOwners(name string) (int, int) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	result := fs.files[name]
+	return result.uid, result.gid
+}
+
 func (fs *fakeFS) Chown(name string, uid, gid int) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
 	fs.files[name] = fakeFile{uid: uid, gid: gid}
 	return nil
 }
 
 func (fs *fakeFS) Stat(name string) (os.FileInfo, error) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
 	info, err := os.Stat(name)
 	if err != nil {
 		return nil, err
