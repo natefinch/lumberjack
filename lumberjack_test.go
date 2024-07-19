@@ -8,6 +8,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -769,4 +771,83 @@ func notExist(path string, t testing.TB) {
 func exists(path string, t testing.TB) {
 	_, err := os.Stat(path)
 	assertUp(err == nil, t, 1, "expected file to exist, but got error from os.Stat: %v", err)
+}
+
+func TestClose(t *testing.T) {
+	tmp, err := os.MkdirTemp("", "")
+	assertUp(err == nil, t, 1, "expected to create temp dir but failed with error:%v", err)
+	defer os.RemoveAll(tmp)
+	runtime.GC()
+	grs := runtime.NumGoroutine()
+	tmpfile := filepath.Join(tmp, "tmp.log")
+	for i := 0; i < 1000; i++ {
+		logger := Logger{
+			Filename:   tmpfile,
+			MaxSize:    1,
+			MaxBackups: 1,
+			Compress:   true,
+		}
+		logger.Write([]byte(fmt.Sprintf("%d\n", i)))
+		logger.Close()
+	}
+	runtime.GC()
+	grs2 := runtime.NumGoroutine()
+	assertUp(grs == grs2, t, 1, "expected goroutine number %d but got %d", grs, grs2)
+}
+
+func TestCloseLargeFile(t *testing.T) {
+	tmp, err := os.MkdirTemp("", "")
+	assertUp(err == nil, t, 1, "expected to create temp dir but failed with error:%v", err)
+	defer os.RemoveAll(tmp)
+	runtime.GC()
+	grs := runtime.NumGoroutine()
+
+	content := repeatCharString("*", 1024*1025)
+	for i := 0; i < 100; i++ {
+		tmpfile := filepath.Join(tmp, fmt.Sprintf("tmp_%d.log", i))
+		f, err := os.Create(tmpfile)
+		assertUp(err == nil, t, 1, "expected create tmp file but got err :%v", err)
+		_, err = f.WriteString(content)
+		assertUp(err == nil, t, 1, "expected write tmp file but got err :%v", err)
+		err = f.Close()
+		assertUp(err == nil, t, 1, "expected close tmp file but got err :%v", err)
+		logger := Logger{
+			Filename:   tmpfile,
+			MaxSize:    1,
+			MaxBackups: 101,
+			Compress:   true,
+		}
+		err = logger.Rotate()
+		assertUp(err == nil, t, 1, "expected Rotate logger but got err :%v", err)
+		err = logger.Close()
+		assertUp(err == nil, t, 1, "expected close logger but got err :%v", err)
+	}
+	count := getDirFileCount(tmp, ".log.gz")
+	assertUp(count == 100, t, 1, "expected log.gz file 100 but got %d", count)
+	runtime.GC()
+	grs2 := runtime.NumGoroutine()
+	assertUp(grs == grs2, t, 1, "expected goroutine number %d but got %d", grs, grs2)
+}
+
+func repeatCharString(cs string, repeat int) string {
+	var builder strings.Builder
+	builder.Grow(len(cs) * repeat)
+	for i := 0; i < repeat; i++ {
+		builder.WriteString(cs)
+	}
+	return builder.String()
+}
+func getDirFileCount(dir string, suffix string) (num int) {
+	if fs, err := os.ReadDir(dir); err == nil {
+		for _, entry := range fs {
+			if entry.IsDir() {
+				num += getDirFileCount(filepath.Join(dir, entry.Name()), suffix)
+			} else {
+				if suffix == "" || strings.HasSuffix(entry.Name(), suffix) {
+					num++
+				}
+			}
+		}
+	}
+	return
 }

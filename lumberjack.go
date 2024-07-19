@@ -3,7 +3,7 @@
 // Note that this is v2.0 of lumberjack, and should be imported using gopkg.in
 // thusly:
 //
-//   import "gopkg.in/natefinch/lumberjack.v2"
+//	import "gopkg.in/natefinch/lumberjack.v2"
 //
 // The package name remains simply lumberjack, and the code resides at
 // https://github.com/natefinch/lumberjack under the v2.0 branch.
@@ -66,7 +66,7 @@ var _ io.WriteCloser = (*Logger)(nil)
 // `/var/log/foo/server.log`, a backup created at 6:30pm on Nov 11 2016 would
 // use the filename `/var/log/foo/server-2016-11-04T18-30-00.000.log`
 //
-// Cleaning Up Old Log Files
+// # Cleaning Up Old Log Files
 //
 // Whenever a new logfile gets created, old log files may be deleted.  The most
 // recent files according to the encoded timestamp will be retained, up to a
@@ -111,7 +111,9 @@ type Logger struct {
 	file *os.File
 	mu   sync.Mutex
 
-	millCh    chan bool
+	millCh    chan struct{}
+	closeCh   chan struct{}
+	closed    bool
 	startMill sync.Once
 }
 
@@ -135,7 +137,9 @@ var (
 func (l *Logger) Write(p []byte) (n int, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
+	if l.closed {
+		return 0, fmt.Errorf("logger has been closed")
+	}
 	writeLen := int64(len(p))
 	if writeLen > l.max() {
 		return 0, fmt.Errorf(
@@ -162,9 +166,15 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 }
 
 // Close implements io.Closer, and closes the current logfile.
+// After Close, the logger can not be used
 func (l *Logger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.closed = true
+	if l.closeCh == nil {
+
+		l.closeCh <- struct{}{}
+	}
 	return l.close()
 }
 
@@ -186,6 +196,9 @@ func (l *Logger) close() error {
 func (l *Logger) Rotate() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.closed {
+		return fmt.Errorf("logger has been closed")
+	}
 	return l.rotate()
 }
 
@@ -376,9 +389,13 @@ func (l *Logger) millRunOnce() error {
 // millRun runs in a goroutine to manage post-rotation compression and removal
 // of old log files.
 func (l *Logger) millRun() {
-	for range l.millCh {
-		// what am I going to do, log this?
-		_ = l.millRunOnce()
+	for {
+		select {
+		case <-l.millCh:
+			_ = l.millRunOnce()
+		case <-l.closeCh:
+			return
+		}
 	}
 }
 
@@ -386,13 +403,11 @@ func (l *Logger) millRun() {
 // starting the mill goroutine if necessary.
 func (l *Logger) mill() {
 	l.startMill.Do(func() {
-		l.millCh = make(chan bool, 1)
+		l.millCh = make(chan struct{})
+		l.closeCh = make(chan struct{})
 		go l.millRun()
 	})
-	select {
-	case l.millCh <- true:
-	default:
-	}
+	l.millCh <- struct{}{}
 }
 
 // oldLogFiles returns the list of backup log files stored in the same
