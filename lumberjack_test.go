@@ -707,6 +707,81 @@ func TestJson(t *testing.T) {
 	equals(true, l.Compress, t)
 }
 
+func TestRotationInterval(t *testing.T) {
+	currentTime = fakeTime
+	dir := makeTempDir("TestRotationInterval", t)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+	l := &Logger{
+		Filename:        filename,
+		MaxSize:         10,
+		RotationInterval: time.Minute,
+	}
+	defer l.Close()
+	
+	b := []byte("foo")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+	existsWithContent(filename, b, t)
+	fileCount(dir, 1, t)
+
+	// Advance time by 1 minute and 1 second
+	fakeCurrentTime = fakeCurrentTime.Add(time.Minute + time.Second)
+
+	// Write new content, which should trigger rotation
+	// since the rotation interval has passed
+	b2 := []byte("bar-min!")
+	n, err = l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+	
+	existsWithContent(filename, b2, t)
+	existsWithContent(backupFile(dir), b, t)
+	fileCount(dir, 2, t)
+}
+
+func TestCustomFilenameFormat(t *testing.T) {
+	currentTime = fakeTime
+	dir := makeTempDir("TestCustomFilenameFormat", t)
+	defer os.RemoveAll(dir)
+
+	customDateFormat := "2006-01-02"
+	customFormat := "%FILENAME%%EXT%." + customDateFormat
+	filename := logFile(dir)
+	l := &Logger{
+		Filename:        filename,
+		MaxSize:         10,
+		FileNameFormat:  customFormat,
+		LocalTime: true,
+	}
+	defer l.Close()
+
+	b := []byte("bar")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+	existsWithContent(filename, b, t)
+	fileCount(dir, 1, t)
+
+	// Advance time to trigger rotation.	
+	newFakeTime()
+	l.rotate()
+
+	b2 := []byte("foo")
+	n, err = l.Write(b2)
+	isNil(err, t)
+	equals(len(b2), n, t)
+
+	// Verify rotation happened with custom format
+	expectedBackupFilename := filepath.Join(dir, fmt.Sprintf("foobar.log.%s", currentTime().Format(customDateFormat)))
+	existsWithContent(expectedBackupFilename, b, t)
+	existsWithContent(filename, b2, t)
+	fileCount(dir, 2, t)
+}
+
+
 // makeTempDir creates a file with a semi-unique name in the OS temp directory.
 // It should be based on the name of the test, to keep parallel tests from
 // colliding, and must be cleaned up after the test is finished.

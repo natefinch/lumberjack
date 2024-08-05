@@ -41,6 +41,11 @@ const (
 	defaultMaxSize   = 100
 )
 
+const (
+	placeholderFilename  = "%FILENAME%"
+	placeholderExtension = "%EXT%"
+)
+
 // ensure we always implement io.WriteCloser
 var _ io.WriteCloser = (*Logger)(nil)
 
@@ -107,12 +112,25 @@ type Logger struct {
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
 
+	// RotationInterval is the time duration after which the log file should be rotated.
+	// The default is set to 0, and the rotation will not be based on time.
+	RotationInterval time.Duration `json:"rotationtime" yaml:"rotationtime"`
+
+	// FileNameFormat allows customization of the filename format.
+	// Use placeholders like %FILENAME%, %EXT%, 2006, 01, 02, 15, 04, 05, 000.
+	//
+	// Example: "%FILENAME%.2006-01-02-15-04%EXT%"
+	FileNameFormat string `json:"filenameformat" yaml:"filenameformat"`
+
 	size int64
 	file *os.File
 	mu   sync.Mutex
 
 	millCh    chan bool
 	startMill sync.Once
+
+	// nextRotateTime is the next scheduled time for rotation based RotationInterval.
+	nextRotateTime time.Time
 }
 
 var (
@@ -149,7 +167,7 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 		}
 	}
 
-	if l.size+writeLen > l.max() {
+	if l.shouldRotate(writeLen) {
 		if err := l.rotate(); err != nil {
 			return 0, err
 		}
@@ -200,7 +218,31 @@ func (l *Logger) rotate() error {
 		return err
 	}
 	l.mill()
+	l.updateNextRotateTime()
 	return nil
+}
+
+// shouldRotate checks if rotation is needed based on time.
+func (l *Logger) shouldRotate(writeLen int64) bool {
+	if l.size+writeLen > l.max() {
+		return true
+	}
+	if l.RotationInterval > 0 {
+		if l.nextRotateTime.IsZero() {
+			l.updateNextRotateTime()
+		}
+		if currentTime().After(l.nextRotateTime) {
+			return true
+		}
+	}
+	return false
+}
+
+// updateNextRotateTime sets or updates the nextRotateTime based on the current time and RotationInterval, if RotationInterval is enabled and non-zero.
+func (l *Logger) updateNextRotateTime() {
+	if l.RotationInterval > 0 {
+		l.nextRotateTime = currentTime().Truncate(l.RotationInterval).Add(l.RotationInterval)
+	}
 }
 
 // openNew opens a new log file for writing, moving any old log file out of the
@@ -218,7 +260,7 @@ func (l *Logger) openNew() error {
 		// Copy the mode off the old logfile.
 		mode = info.Mode()
 		// move the existing file
-		newname := backupName(name, l.LocalTime)
+		newname := l.backupName(name, l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
 			return fmt.Errorf("can't rename log file: %s", err)
 		}
@@ -244,7 +286,7 @@ func (l *Logger) openNew() error {
 // backupName creates a new filename from the given name, inserting a timestamp
 // between the filename and the extension, using the local time if requested
 // (otherwise UTC).
-func backupName(name string, local bool) string {
+func (l *Logger) backupName(name string, local bool) string {
 	dir := filepath.Dir(name)
 	filename := filepath.Base(name)
 	ext := filepath.Ext(filename)
@@ -255,7 +297,14 @@ func backupName(name string, local bool) string {
 	}
 
 	timestamp := t.Format(backupTimeFormat)
-	return filepath.Join(dir, fmt.Sprintf("%s-%s%s", prefix, timestamp, ext))
+	fileFormat := fmt.Sprintf("%s-%s%s", prefix, timestamp, ext)
+
+	if l.FileNameFormat != "" {
+		formattedName := t.Format(l.FileNameFormat)
+		fileFormat = strings.ReplaceAll(formattedName, placeholderFilename, prefix)
+		fileFormat = strings.ReplaceAll(fileFormat, placeholderExtension, ext)
+	}
+	return filepath.Join(dir, fileFormat)
 }
 
 // openExistingOrNew opens the logfile if it exists and if the current write
