@@ -770,3 +770,52 @@ func exists(path string, t testing.TB) {
 	_, err := os.Stat(path)
 	assertUp(err == nil, t, 1, "expected file to exist, but got error from os.Stat: %v", err)
 }
+
+func TestLogger_shouldRotateDate(t *testing.T) {
+	type fields struct {
+		DisableDateRotate bool
+		LastRotateDate    time.Time
+		DateRotateType    DateRotateType
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   bool
+	}{
+		{
+			name: "after",
+			fields: func() fields {
+				return fields{
+					DisableDateRotate: false,
+					LastRotateDate:    time.Now().Add(-2 * time.Minute),
+					DateRotateType:    "1m",
+				}
+			}(),
+			want: true,
+		},
+		{
+			name: "before",
+			fields: func() fields {
+				currentTime = time.Now
+				return fields{
+					DisableDateRotate: false,
+					LastRotateDate:    time.Now(),
+					DateRotateType:    "1m",
+				}
+			}(),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := &Logger{
+				DisableDateRotate: tt.fields.DisableDateRotate,
+				LastRotateDate:    tt.fields.LastRotateDate,
+				DateRotateType:    tt.fields.DateRotateType,
+			}
+			if got := l.shouldRotateDate(); got != tt.want {
+				t.Errorf("shouldRotateDate() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

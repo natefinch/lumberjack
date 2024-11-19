@@ -579,11 +579,11 @@ func (l *Logger) shouldRotateDate() bool {
 
 	switch l.DateRotateType {
 	case DateRotateType1Min:
-		return timeNow.Before(l.LastRotateDate.Add(1 * time.Minute))
+		return timeNow.After(l.LastRotateDate.Add(1 * time.Minute))
 	case DateRotateType1Hour:
-		return timeNow.Before(l.LastRotateDate.Add(1 * time.Hour))
+		return timeNow.After(l.LastRotateDate.Add(1 * time.Hour))
 	case DateRotateType1Day:
-		return timeNow.Before(l.LastRotateDate.Add(24 * time.Hour))
+		return timeNow.After(l.LastRotateDate.Add(24 * time.Hour))
 	}
 	return false
 }
