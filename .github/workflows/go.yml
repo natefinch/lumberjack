@@ -1,0 +1,34 @@
+name: Build and run all tests
+on:
+  pull_request:
+
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get the version
+        id: get_version
+        run: echo ::set-output name=tag::$(echo ${GITHUB_SHA:8})
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ^1.23
+
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get and verify dependencies
+        run: go mod download && go mod verify
+
+      - name: Run all tests
+        run: |
+          go test -v -cover ./... -coverprofile coverage.out -coverpkg ./...
+          go tool cover -func coverage.out -o coverage.out
