@@ -3,7 +3,7 @@
 // Note that this is v2.0 of lumberjack, and should be imported using gopkg.in
 // thusly:
 //
-//   import "gopkg.in/natefinch/lumberjack.v2"
+//	import "gopkg.in/natefinch/lumberjack.v2"
 //
 // The package name remains simply lumberjack, and the code resides at
 // https://github.com/natefinch/lumberjack under the v2.0 branch.
@@ -66,7 +66,7 @@ var _ io.WriteCloser = (*Logger)(nil)
 // `/var/log/foo/server.log`, a backup created at 6:30pm on Nov 11 2016 would
 // use the filename `/var/log/foo/server-2016-11-04T18-30-00.000.log`
 //
-// Cleaning Up Old Log Files
+// # Cleaning Up Old Log Files
 //
 // Whenever a new logfile gets created, old log files may be deleted.  The most
 // recent files according to the encoded timestamp will be retained, up to a
@@ -107,12 +107,24 @@ type Logger struct {
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
 
+	// FileMode represents the file mode to be used when opening the new log file, 0600 is the default.
+	FileMode os.FileMode
+
+	// new file whether inherit orginal file mode
+	InheritOrgFMSwitch InheritSwitch `json:"inheritswitch" yaml:"inheritswitch"`
+
 	size int64
 	file *os.File
 	mu   sync.Mutex
 
 	millCh    chan bool
 	startMill sync.Once
+}
+
+type InheritSwitch struct {
+	Enable bool `json:"enable" yaml:"enable" default:"false"`
+	// 0600 is the default.
+	NewModel os.FileMode `json:"newmode" yaml:"newmode" `
 }
 
 var (
@@ -212,11 +224,17 @@ func (l *Logger) openNew() error {
 	}
 
 	name := l.filename()
-	mode := os.FileMode(0600)
+	mode := l.fileMode()
 	info, err := osStat(name)
 	if err == nil {
 		// Copy the mode off the old logfile.
-		mode = info.Mode()
+		// verify whether inherit original file model .
+		if enable := l.InheritOrgFMSwitch.Enable; enable {
+			mode = info.Mode()
+		} else {
+			// new file use new file mode
+			mode = l.inheritOrgfileMode()
+		}
 		// move the existing file
 		newname := backupName(name, l.LocalTime)
 		if err := os.Rename(name, newname); err != nil {
@@ -295,6 +313,21 @@ func (l *Logger) filename() string {
 	}
 	name := filepath.Base(os.Args[0]) + "-lumberjack.log"
 	return filepath.Join(os.TempDir(), name)
+}
+
+// fileMode returns the FileMode to use when creating the log file.
+func (l *Logger) fileMode() os.FileMode {
+	if l.FileMode == 0 {
+		return 0600
+	}
+	return l.FileMode
+}
+
+func (l *Logger) inheritOrgfileMode() os.FileMode {
+	if l.InheritOrgFMSwitch.NewModel == 0 {
+		return 0600
+	}
+	return l.InheritOrgFMSwitch.NewModel
 }
 
 // millRunOnce performs compression and removal of stale log files.
