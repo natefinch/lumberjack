@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -674,6 +675,137 @@ func TestCompressOnResume(t *testing.T) {
 	notExist(filename2, t)
 
 	fileCount(dir, 2, t)
+}
+
+func TestCloseCleanupGoroutines(t *testing.T) {
+	currentTime = fakeTime
+
+	// Let goroutines from previous tests settle.
+	time.Sleep(50 * time.Millisecond)
+	runtime.GC()
+	baseline := runtime.NumGoroutine()
+
+	const numLoggers = 5
+	dirs := make([]string, numLoggers)
+	loggers := make([]*Logger, numLoggers)
+
+	for i := 0; i < numLoggers; i++ {
+		dir := makeTempDir(fmt.Sprintf("TestCloseCleanupGoroutines%d", i), t)
+		dirs[i] = dir
+		l := &Logger{
+			Filename:   logFile(dir),
+			MaxBytes:   10,
+			MaxBackups: 2,
+		}
+		loggers[i] = l
+
+		// Write enough to trigger rotation, which starts the mill goroutine.
+		b := []byte("boo!")
+		_, err := l.Write(b)
+		isNil(err, t)
+
+		newFakeTime()
+
+		b2 := []byte("foooooo!")
+		_, err = l.Write(b2)
+		isNil(err, t)
+
+		newFakeTime()
+
+		// Rotate again to exercise the mill goroutine further.
+		b3 := []byte("baaaaaaar!")
+		_, err = l.Write(b3)
+		isNil(err, t)
+
+		newFakeTime()
+	}
+
+	// Wait for mill goroutines to finish their work.
+	time.Sleep(100 * time.Millisecond)
+
+	// Confirm goroutines have been spawned (more than baseline).
+	afterWrite := runtime.NumGoroutine()
+	assert(afterWrite > baseline, t,
+		"expected goroutines to increase after writes, got baseline=%d after=%d", baseline, afterWrite)
+
+	// Close all loggers.
+	for i := 0; i < numLoggers; i++ {
+		err := loggers[i].Close()
+		isNil(err, t)
+	}
+
+	// Wait for goroutines to wind down.
+	time.Sleep(100 * time.Millisecond)
+	runtime.GC()
+
+	afterClose := runtime.NumGoroutine()
+	// All mill goroutines should have exited; allow +1 tolerance for runtime jitter.
+	assert(afterClose <= baseline+1, t,
+		"expected goroutines to return to baseline after Close, got baseline=%d after=%d", baseline, afterClose)
+
+	// Cleanup.
+	for _, dir := range dirs {
+		os.RemoveAll(dir)
+	}
+}
+
+func TestWriteAfterClose(t *testing.T) {
+	currentTime = fakeTime
+
+	time.Sleep(50 * time.Millisecond)
+	runtime.GC()
+	baseline := runtime.NumGoroutine()
+
+	dir := makeTempDir("TestWriteAfterClose", t)
+	defer os.RemoveAll(dir)
+
+	l := &Logger{
+		Filename:   logFile(dir),
+		MaxBytes:   10,
+		MaxBackups: 2,
+	}
+
+	// First cycle: write, rotate, close.
+	b := []byte("boo!")
+	_, err := l.Write(b)
+	isNil(err, t)
+
+	newFakeTime()
+
+	b2 := []byte("foooooo!")
+	_, err = l.Write(b2)
+	isNil(err, t)
+
+	time.Sleep(50 * time.Millisecond)
+
+	err = l.Close()
+	isNil(err, t)
+
+	// Second cycle: write again after close (mill goroutine should restart).
+	newFakeTime()
+
+	b3 := []byte("bar!")
+	_, err = l.Write(b3)
+	isNil(err, t)
+
+	newFakeTime()
+
+	b4 := []byte("baaaaaaz!")
+	_, err = l.Write(b4)
+	isNil(err, t)
+
+	time.Sleep(50 * time.Millisecond)
+
+	err = l.Close()
+	isNil(err, t)
+
+	// Goroutines should be back to baseline.
+	time.Sleep(100 * time.Millisecond)
+	runtime.GC()
+
+	afterClose := runtime.NumGoroutine()
+	assert(afterClose <= baseline+1, t,
+		"expected goroutines to return to baseline after second Close, got baseline=%d after=%d", baseline, afterClose)
 }
 
 func TestJson(t *testing.T) {
