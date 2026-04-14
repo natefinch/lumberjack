@@ -174,7 +174,12 @@ func (l *Logger) close() error {
 		return nil
 	}
 	err := l.file.Close()
-	l.file = nil
+	// Only nil out file on successful close to avoid leaking the
+	// file descriptor. If Close fails, keeping the reference allows
+	// a subsequent close attempt to retry.
+	if err == nil {
+		l.file = nil
+	}
 	return err
 }
 
