@@ -443,7 +443,10 @@ func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 
 // max returns the maximum size in bytes of log files before rolling.
 func (l *Logger) max() int64 {
-	if l.MaxSize == 0 {
+	// MaxSize <= 0 means "use the default". A negative MaxSize previously
+	// produced a negative byte limit, so every Write failed with
+	// "write length exceeds maximum file size".
+	if l.MaxSize <= 0 {
 		return int64(defaultMaxSize * megabyte)
 	}
 	return int64(l.MaxSize) * int64(megabyte)
