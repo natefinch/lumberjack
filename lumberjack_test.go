@@ -770,3 +770,25 @@ func exists(path string, t testing.TB) {
 	_, err := os.Stat(path)
 	assertUp(err == nil, t, 1, "expected file to exist, but got error from os.Stat: %v", err)
 }
+
+func TestNegativeMaxSizeUsesDefault(t *testing.T) {
+	dir := makeTempDir("neg_maxsize", t)
+	defer os.RemoveAll(dir)
+
+	filename := logFile(dir)
+
+	l := &Logger{
+		Filename: filename,
+		MaxSize:  -1,
+	}
+	defer l.Close()
+
+	b := []byte("foo")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	// Negative MaxSize must not be treated as a tiny/negative limit; the
+	// write should succeed using the default max size.
+	equals(int64(defaultMaxSize*megabyte), l.max(), t)
+}
