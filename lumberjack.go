@@ -3,7 +3,7 @@
 // Note that this is v2.0 of lumberjack, and should be imported using gopkg.in
 // thusly:
 //
-//   import "gopkg.in/natefinch/lumberjack.v2"
+//	import "gopkg.in/natefinch/lumberjack.v2"
 //
 // The package name remains simply lumberjack, and the code resides at
 // https://github.com/natefinch/lumberjack under the v2.0 branch.
@@ -66,7 +66,7 @@ var _ io.WriteCloser = (*Logger)(nil)
 // `/var/log/foo/server.log`, a backup created at 6:30pm on Nov 11 2016 would
 // use the filename `/var/log/foo/server-2016-11-04T18-30-00.000.log`
 //
-// Cleaning Up Old Log Files
+// # Cleaning Up Old Log Files
 //
 // Whenever a new logfile gets created, old log files may be deleted.  The most
 // recent files according to the encoded timestamp will be retained, up to a
@@ -111,8 +111,11 @@ type Logger struct {
 	file *os.File
 	mu   sync.Mutex
 
-	millCh    chan bool
-	startMill sync.Once
+	millCh      chan bool
+	startMill   sync.Once
+	millMu      sync.Mutex
+	millPending int
+	millIdle    *sync.Cond
 }
 
 var (
@@ -121,6 +124,9 @@ var (
 
 	// os_Stat exists so it can be mocked out by tests.
 	osStat = os.Stat
+
+	// compressFile exists so tests can observe an in-flight rotation.
+	compressFile = compressLogFile
 
 	// megabyte is the conversion factor between MaxSize and bytes.  It is a
 	// variable so tests can mock it out and not need to write megabytes of data
@@ -162,10 +168,20 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 }
 
 // Close implements io.Closer, and closes the current logfile.
+// It waits for a rotation that is already compressing or deleting old files.
 func (l *Logger) Close() error {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.close()
+	err := l.close()
+	started := l.millCh != nil
+	l.mu.Unlock()
+	if started {
+		l.millMu.Lock()
+		for l.millPending > 0 {
+			l.millIdle.Wait()
+		}
+		l.millMu.Unlock()
+	}
+	return err
 }
 
 // close closes the file if it is open.
@@ -364,7 +380,7 @@ func (l *Logger) millRunOnce() error {
 	}
 	for _, f := range compress {
 		fn := filepath.Join(l.dir(), f.Name())
-		errCompress := compressLogFile(fn, fn+compressSuffix)
+		errCompress := compressFile(fn, fn+compressSuffix)
 		if err == nil && errCompress != nil {
 			err = errCompress
 		}
@@ -379,6 +395,12 @@ func (l *Logger) millRun() {
 	for range l.millCh {
 		// what am I going to do, log this?
 		_ = l.millRunOnce()
+		l.millMu.Lock()
+		l.millPending--
+		if l.millPending == 0 {
+			l.millIdle.Broadcast()
+		}
+		l.millMu.Unlock()
 	}
 }
 
@@ -387,11 +409,21 @@ func (l *Logger) millRun() {
 func (l *Logger) mill() {
 	l.startMill.Do(func() {
 		l.millCh = make(chan bool, 1)
+		l.millIdle = sync.NewCond(&l.millMu)
 		go l.millRun()
 	})
+	l.millMu.Lock()
+	l.millPending++
+	l.millMu.Unlock()
 	select {
 	case l.millCh <- true:
 	default:
+		l.millMu.Lock()
+		l.millPending--
+		if l.millPending == 0 {
+			l.millIdle.Broadcast()
+		}
+		l.millMu.Unlock()
 	}
 }
 
