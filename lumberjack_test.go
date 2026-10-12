@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -585,6 +586,70 @@ func TestRotate(t *testing.T) {
 
 	// this will use the new fake time
 	existsWithContent(filename, b2, t)
+}
+
+func TestCloseWaitsForCompression(t *testing.T) {
+	currentTime = fakeTime
+	megabyte = 1
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	letGo := func() { once.Do(func() { close(release) }) }
+	orig := compressFile
+	compressFile = func(src, dst string) error {
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+		<-release
+		return orig(src, dst)
+	}
+	defer func() {
+		compressFile = orig
+		letGo()
+	}()
+
+	dir := makeTempDir("TestCloseWaitsForCompression", t)
+	defer os.RemoveAll(dir)
+
+	l := &Logger{
+		Compress: true,
+		Filename: logFile(dir),
+		MaxSize:  10,
+	}
+	b := []byte("boo!")
+	n, err := l.Write(b)
+	isNil(err, t)
+	equals(len(b), n, t)
+
+	newFakeTime()
+	err = l.Rotate()
+	isNil(err, t)
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("compression did not start")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- l.Close()
+	}()
+	select {
+	case err = <-done:
+		t.Fatalf("Close returned while compression was still running: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	letGo()
+	select {
+	case err = <-done:
+		isNil(err, t)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not return after compression finished")
+	}
 }
 
 func TestCompressOnRotate(t *testing.T) {
