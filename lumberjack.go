@@ -434,10 +434,11 @@ func (l *Logger) timeFromName(filename, prefix, ext string) (time.Time, error) {
 	if !strings.HasPrefix(filename, prefix) {
 		return time.Time{}, errors.New("mismatched prefix")
 	}
+	filename = filename[len(prefix):]
 	if !strings.HasSuffix(filename, ext) {
 		return time.Time{}, errors.New("mismatched extension")
 	}
-	ts := filename[len(prefix) : len(filename)-len(ext)]
+	ts := filename[:len(filename)-len(ext)]
 	return time.Parse(backupTimeFormat, ts)
 }
 

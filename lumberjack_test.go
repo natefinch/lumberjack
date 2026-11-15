@@ -503,6 +503,64 @@ func TestTimeFromName(t *testing.T) {
 	}
 }
 
+func TestTimeFromNameOverlappingPrefixAndExtension(t *testing.T) {
+	l := &Logger{Filename: "app..-log"}
+	prefix, ext := l.prefixAndExt()
+	want := time.Date(2014, 5, 4, 14, 44, 33, 555000000, time.UTC)
+	for _, test := range []struct {
+		filename   string
+		compressed bool
+		valid      bool
+	}{
+		{"app.-log", false, false},
+		{"app.-log.gz", true, false},
+		{prefix + ext, false, false},
+		{"app.-2014-05-04T14-44-33.555.-log", false, true},
+		{"app.-2014-05-04T14-44-33.555.-log.gz", true, true},
+	} {
+		t.Run(test.filename, func(t *testing.T) {
+			suffix := ext
+			if test.compressed {
+				suffix += compressSuffix
+			}
+			got, err := l.timeFromName(test.filename, prefix, suffix)
+			if test.valid {
+				isNil(err, t)
+				equals(want, got, t)
+			} else {
+				notNil(err, t)
+				equals(time.Time{}, got, t)
+			}
+		})
+	}
+}
+
+func TestMillPreservesOverlappingBackupNames(t *testing.T) {
+	dir := makeTempDir("TestMillPreservesOverlappingBackupNames", t)
+	defer os.RemoveAll(dir)
+	l := &Logger{Filename: filepath.Join(dir, "app..-log"), MaxBackups: 1}
+	old := "app.-2013-05-04T14-44-33.555.-log"
+	newest := "app.-2014-05-04T14-44-33.555.-log"
+	preserve := []string{"app..-log", "app.-log", "app.-log.gz", newest}
+	for _, name := range append(preserve, old) {
+		isNil(ioutil.WriteFile(filepath.Join(dir, name), []byte(name), 0600), t)
+	}
+
+	files, err := l.oldLogFiles()
+	isNil(err, t)
+	equals(2, len(files), t)
+	equals(newest, files[0].Name(), t)
+	equals(old, files[1].Name(), t)
+
+	isNil(l.millRunOnce(), t)
+	_, err = os.Stat(filepath.Join(dir, old))
+	assert(os.IsNotExist(err), t, "old backup was not removed: %v", err)
+	for _, name := range preserve {
+		existsWithContent(filepath.Join(dir, name), []byte(name), t)
+	}
+	fileCount(dir, len(preserve), t)
+}
+
 func TestLocalTime(t *testing.T) {
 	currentTime = fakeTime
 	megabyte = 1
